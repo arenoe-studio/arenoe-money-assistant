@@ -1,0 +1,24 @@
+{"level":"info","message":"Regex parsing result","result":{"harga":15000,"items":"Nasi Goreng","metodePembayaran":"Cash","namaToko":"Warteg Bahari"},"timestamp":"2026-02-10T13:03:29.133Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":50000,"items":"Pulsa","metodePembayaran":"OVO"},"timestamp":"2026-02-10T13:03:29.135Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:03:29.136Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":20000,"items":"Kopi"},"timestamp":"2026-02-10T13:03:29.136Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:03:29.136Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":25000,"items":"beli sate","metodePembayaran":"GoPay","namaToko":"sate khas senayan"},"timestamp":"2026-02-10T13:03:29.137Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":15000,"items":"Nasi Goreng","metodePembayaran":"Cash","namaToko":"Warteg Bahari"},"timestamp":"2026-02-10T13:08:26.256Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":50000,"items":"Pulsa","metodePembayaran":"OVO"},"timestamp":"2026-02-10T13:08:26.258Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:08:26.258Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":20000,"items":"Kopi"},"timestamp":"2026-02-10T13:08:26.259Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:08:26.259Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":25000,"items":"beli sate","metodePembayaran":"GoPay","namaToko":"sate khas senayan"},"timestamp":"2026-02-10T13:08:26.259Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":15000,"items":"Nasi Goreng","metodePembayaran":"Cash","namaToko":"Warteg Bahari"},"timestamp":"2026-02-10T13:08:46.204Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":50000,"items":"Pulsa","metodePembayaran":"OVO"},"timestamp":"2026-02-10T13:08:46.207Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:08:46.207Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":20000,"items":"Kopi"},"timestamp":"2026-02-10T13:08:46.208Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:08:46.208Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":25000,"items":"beli sate","metodePembayaran":"GoPay","namaToko":"sate khas senayan"},"timestamp":"2026-02-10T13:08:46.208Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":15000,"items":"Nasi Goreng","metodePembayaran":"Cash","namaToko":"Warteg Bahari"},"timestamp":"2026-02-10T13:12:05.716Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":50000,"items":"Pulsa","metodePembayaran":"OVO"},"timestamp":"2026-02-10T13:12:05.718Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:12:05.719Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":20000,"items":"Kopi"},"timestamp":"2026-02-10T13:12:05.719Z"}
+{"level":"info","message":"AI parsing result","result":{"harga":999,"items":"AI Item","metodePembayaran":"Cash","namaToko":"AI Shop"},"timestamp":"2026-02-10T13:12:05.719Z"}
+{"level":"info","message":"Regex parsing result","result":{"harga":25000,"items":"beli sate","metodePembayaran":"GoPay","namaToko":"sate khas senayan"},"timestamp":"2026-02-10T13:12:05.720Z"}

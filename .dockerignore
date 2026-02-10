@@ -1,0 +1,15 @@
+
+node_modules
+dist
+.env
+.git
+.github
+test
+repro.ts
+repro_*.ts
+logs
+error.log
+combined.log
+README.md
+MANUAL_TESTING.md
+userdocs
