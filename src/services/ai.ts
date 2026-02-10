@@ -8,9 +8,19 @@ import { ApplicationError } from '../utils/error';
 dotenv.config();
 
 // OpenRouter client configuration
+const apiKey = process.env.OPENROUTER_API_KEY;
+console.log("DEBUG: AI Service Config:", {
+    apiKeyPresent: !!apiKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+    model: 'anthropic/claude-3-haiku'
+});
+
 const client = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
+  apiKey: apiKey, // Explicitly pass it to be sure
+  // Explicitly disable organization and project to avoid issues with OpenRouter
+  organization: null as any, 
+  project: null as any,
   defaultHeaders: {
     'HTTP-Referer': 'https://arenoe-money-assistant.com', // Optional
     'X-Title': 'Arenoe Money Assistant', // Optional
@@ -50,6 +60,7 @@ export async function extractTransaction(message: string): Promise<ExtractionRes
         { role: 'user', content: `Pesan: "${message}"` }
       ]
     });
+    console.log("DEBUG: OpenRouter Response Status:", response.choices ? "OK" : "Empty");
     
     const content = response.choices[0]?.message?.content;
     
