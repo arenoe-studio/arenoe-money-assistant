@@ -4,6 +4,7 @@ import { logger } from './utils/logger';
 import { db } from './db/client';
 import { bot } from './bot';
 import { sql } from 'drizzle-orm';
+import * as http from 'http';
 
 dotenv.config();
 
@@ -11,23 +12,42 @@ async function main() {
   try {
     logger.info('Starting Money Assistant Bot...');
     
-    // Database check
-    // The previous 'db.execute(sql`SELECT 1`)' might need specific driver support
-    // Neon serverless driver usually works fine, but let's wrap in try-catch specific
+    // Database Check
     try {
+        // Simple query to verify connection
         await db.execute(sql`SELECT 1`); 
         logger.info('Database connection initialized successfully');
     } catch (dbError) {
         logger.error('Database connection failed', { error: dbError });
-        // Don't exit process strictly if DB is optional for bot startup (though it is needed for user config)
-        // For now we continue or exit depending on strictness. Let's exit.
         process.exit(1);
     }
 
-    // Launch Bot
-    bot.launch(() => {
+    // Start HTTP Server for Health Checks (Koyeb/Render requirement)
+    const port = process.env.PORT || 8000;
+    const server = http.createServer((req, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('Bot is running');
+    });
+
+    server.listen(port, () => {
+        logger.info(`Health check server listening on port ${port}`);
+    });
+
+    // Launch Bot (Polling Mode)
+    await bot.launch(() => {
         logger.info('Bot is online and polling updates');
     });
+
+    // Graceful Shutdown
+    const stop = (signal: string) => {
+        logger.info(`Received ${signal}, shutting down...`);
+        server.close();
+        bot.stop(signal);
+        process.exit(0);
+    };
+
+    process.once('SIGINT', () => stop('SIGINT'));
+    process.once('SIGTERM', () => stop('SIGTERM'));
 
   } catch (error) {
     logger.error('Failed to start application', { error });
