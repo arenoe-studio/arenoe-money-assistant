@@ -14,7 +14,6 @@ async function main() {
     
     // Database Check
     try {
-        // Simple query to verify connection
         await db.execute(sql`SELECT 1`); 
         logger.info('Database connection initialized successfully');
     } catch (dbError) {
@@ -22,15 +21,22 @@ async function main() {
         process.exit(1);
     }
 
-    // Start HTTP Server for Health Checks (Koyeb/Render requirement)
-    const port = process.env.PORT || 8000;
+    // Start HTTP Server for Health Checks
+    // MUST bind to 0.0.0.0 for Docker/Koyeb networking
+    const port = parseInt(process.env.PORT || '8000', 10);
     const server = http.createServer((req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('Bot is running');
+        // Log health checks for debugging
+        if (req.url === '/') {
+            res.writeHead(200, { 'Content-Type': 'text/plain' });
+            res.end('Bot is running');
+            return;
+        }
+        res.writeHead(404);
+        res.end();
     });
 
-    server.listen(port, () => {
-        logger.info(`Health check server listening on port ${port}`);
+    server.listen(port, '0.0.0.0', () => {
+        logger.info(`Health check server listening on 0.0.0.0:${port}`);
     });
 
     // Launch Bot (Polling Mode)
