@@ -12,6 +12,7 @@ RUN npm ci
 COPY . .
 
 # Build with tsup
+# Force rebuild cache bust: 1
 RUN npm run build
 
 # --- Production Stage ---
