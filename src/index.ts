@@ -100,6 +100,29 @@ async function main() {
                 return;
             }
 
+            // Telegram Webhook Endpoint
+            if (req.url === '/webhook/telegram' && req.method === 'POST') {
+                try {
+                    const buffers = [];
+                    for await (const chunk of req) {
+                        buffers.push(chunk);
+                    }
+                    const data = Buffer.concat(buffers).toString();
+                    const update = JSON.parse(data);
+
+                    // Pass update to bot
+                    await bot.handleUpdate(update);
+
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ ok: true }));
+                } catch (error: any) {
+                    logger.error('Telegram Webhook Error', { error: error.message });
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: error.message }));
+                }
+                return;
+            }
+
             res.writeHead(404);
             res.end();
         });
@@ -131,20 +154,16 @@ async function main() {
             logger.warn('Failed to update bot profile (likely rate limited), continuing startup...', { error: e.message });
         }
 
-        // 2. Launch Bot
+        // 2. Setup Webhook or Polling
         let botRetries = 5;
         while (botRetries > 0) {
             try {
                 if (WEBHOOK_DOMAIN) {
                     // Production: Webhook Mode
-                    await bot.launch({
-                        webhook: {
-                            domain: WEBHOOK_DOMAIN,
-                            path: WEBHOOK_PATH
-                        },
-                        dropPendingUpdates: false
-                    });
-                    logger.info(`Bot is online in WEBHOOK mode at ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+                    // We handle updates manually via HTTP server, so just set the webhook URL
+                    await bot.telegram.setWebhook(`${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+                    logger.info(`Bot webhook set to ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+                    logger.info('Bot is online in WEBHOOK mode');
                 } else {
                     // Development: Polling Mode
                     await bot.launch();
