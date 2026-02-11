@@ -55,7 +55,7 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
         ];
 
         // Use standard GPT 5 mini
-        const parsedResponse = await openRouterChatCompletion(messages, 'openai/gpt-5-mini');
+        const parsedResponse = await openRouterChatCompletion(messages, 'x-ai/grok-4.1-fast');
 
         const content = (parsedResponse as any).choices?.[0]?.message?.content;
 
