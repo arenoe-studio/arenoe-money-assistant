@@ -64,7 +64,7 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
 
         // 2. Save to Google Sheets
         try {
-            await writeBatchTransaction(telegramId, transactions as Transaction[]);
+            await writeBatchTransaction(telegramId, transactions as Transaction[], batchId);
             // Optionally update syncedToSheets flag here
             // await db.update(transactionsTable).set({ syncedToSheets: true }).where(eq(transactionsTable.transactionId, batchId));
         } catch (sheetError) {

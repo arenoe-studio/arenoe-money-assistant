@@ -82,7 +82,8 @@ export async function writeTransaction(userId: number, transaction: Transaction)
  */
 export async function writeBatchTransaction(
   userId: number,
-  transactions: Transaction[]
+  transactions: Transaction[],
+  overrideTransactionId?: string
 ): Promise<void> {
   try {
     // 1. Fetch user credentials
@@ -104,7 +105,7 @@ export async function writeBatchTransaction(
     const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
     // 4. Generate shared transaction ID
-    const transactionId = crypto.randomUUID();
+    const transactionId = overrideTransactionId || crypto.randomUUID();
     const timestamp = getCurrentTimestamp();
 
     // 5. Prepare rows
