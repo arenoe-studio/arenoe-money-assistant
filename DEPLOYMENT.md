@@ -33,11 +33,12 @@ Ensure the following files are in your repository root (Already created):
 6.  **Environment Variables**:
     Add the following variables (Copy from your `.env`, but use Production values):
     - `TELEGRAM_BOT_TOKEN`: _your_production_bot_token_
+    - `WEBHOOK_DOMAIN`: `https://[YOUR-APP-NAME].koyeb.app` (use your actual Koyeb URL)
     - `OPENROUTER_API_KEY`: _your_openrouter_key_
     - `DATABASE_URL`: _your_neon_postgres_url_ (Ensure ?sslmode=require)
     - `GOOGLE_CLIENT_ID`: _your_google_client_id_
     - `GOOGLE_CLIENT_SECRET`: _your_google_client_secret_
-    - `GOOGLE_REDIRECT_URI`: _your_callback_url_
+    - `GOOGLE_REDIRECT_URI`: `https://[YOUR-APP-NAME].koyeb.app/oauth2callback`
     - `NODE_ENV`: `production`
 7.  **Instance Size**: Nano or Micro is sufficient.
 8.  Click **Deploy**.

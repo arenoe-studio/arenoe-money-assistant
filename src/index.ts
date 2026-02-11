@@ -108,13 +108,14 @@ async function main() {
             logger.info(`Health check server listening on 0.0.0.0:${port}`);
         });
 
-        // Launch Bot (Polling Mode)
-        // Launch Bot (Polling Mode) with Retry
+        // Launch Bot (Webhook Mode for Production)
+        const WEBHOOK_DOMAIN = process.env.WEBHOOK_DOMAIN; // e.g. https://your-app.koyeb.app
+        const WEBHOOK_PATH = '/webhook/telegram';
+
         let botRetries = 10;
         while (botRetries > 0) {
             try {
                 // Set Bot Profile Info (Commands & Description)
-                // This runs once on startup to ensure Telegram servers are updated
                 await bot.telegram.setMyCommands([
                     { command: 'start', description: 'Mulai menggunakan bot' },
                     { command: 'income', description: 'Catat pemasukan' },
@@ -122,23 +123,42 @@ async function main() {
                     { command: 'cek', description: 'Lihat saldo & hutang' },
                     { command: 'laporan', description: 'Laporan keuangan' },
                     { command: 'setting', description: 'Menu pengaturan' },
+                    { command: 'connectsheets', description: 'Hubungkan Google Sheets' },
                     { command: 'help', description: 'Panduan penggunaan' },
                     { command: 'cancel', description: 'Batalkan transaksi' }
                 ]);
 
-                // Set Short Description (appears in chat list/profile under name)
-                // This is likely what the user means by "Status yang terus ada"
+                // Set Short Description
                 try {
                     await bot.telegram.setMyShortDescription('Asisten Keuangan Pribadi 💰\nCatat pengeluaran & pemasukan dengan mudah.');
                 } catch (e) {
-                    // Ignore error if description is same or API limits
                     logger.warn('Failed to set short description', { error: e });
                 }
 
-                await bot.launch(async () => {
-                    logger.info('Bot is online and polling updates');
-                    logger.info('Bot profile updated successfully');
-                });
+                // Production: Use Webhook if WEBHOOK_DOMAIN is set
+                if (WEBHOOK_DOMAIN) {
+                    // Delete any existing webhook first (clean slate)
+                    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+
+                    // Set new webhook
+                    await bot.telegram.setWebhook(`${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+
+                    // Start bot in webhook mode (no polling)
+                    await bot.launch({
+                        webhook: {
+                            domain: WEBHOOK_DOMAIN,
+                            path: WEBHOOK_PATH
+                        }
+                    });
+
+                    logger.info(`Bot is online in WEBHOOK mode at ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+                } else {
+                    // Development: Use Polling
+                    await bot.launch();
+                    logger.info('Bot is online in POLLING mode (development)');
+                }
+
+                logger.info('Bot profile updated successfully');
                 break; // Success
             } catch (botError: any) {
                 logger.error(`Bot launch failed. Retries left: ${botRetries - 1}`, { error: botError.message });
