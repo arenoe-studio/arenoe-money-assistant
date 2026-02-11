@@ -108,13 +108,18 @@ async function main() {
                         buffers.push(chunk);
                     }
                     const data = Buffer.concat(buffers).toString();
+                    logger.info('Received update from Telegram', { length: data.length });
+
                     const update = JSON.parse(data);
 
-                    // Pass update to bot
-                    await bot.handleUpdate(update);
-
+                    // Respond OK immediately to Telegram to prevent timeouts
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
+
+                    // Pass update to bot background processing
+                    bot.handleUpdate(update).catch((err: any) => {
+                        logger.error('Error processing update', { error: err.message });
+                    });
                 } catch (error: any) {
                     logger.error('Telegram Webhook Error', { error: error.message });
                     res.writeHead(500, { 'Content-Type': 'application/json' });
