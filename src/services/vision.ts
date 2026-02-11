@@ -5,7 +5,7 @@ import { logger } from '../utils/logger';
 import { ApplicationError } from '../utils/error';
 
 const RECEIPT_PROMPT = `Analyze this image as a shopping receipt.
-Extract ONLY visible text. Do not guess or hallucinate.
+Extract visible text and categorize items intelligently.
 
 RULES:
 1. **OUTPUT**: Must be valid JSON only.
@@ -14,7 +14,10 @@ RULES:
 4. **DATE**: Extract date/time if printed. Format: YYYY-MM-DD HH:mm (or null).
 5. **MERCHANT**: Extract merchant name from header/logo.
 6. **PAYMENT**: Detect payment method (Cash/Card/QRIS) if shown.
-7. **ANTI-HALLUCINATION**: If an item name is blurry, output "Item Unknown" or skip. Do not invent names.
+7. **CATEGORY**: Infer category based on item name.
+   - Use: "Food" (Meals), "Drink" (Beverages, Coffee), "Snack" (Light food), "Transport" (Fuel, Parking), "Shopping" (Groceries), "Health", "Other".
+   - Example: "Cokelat Hangat" -> "Drink", "Nasi Goreng" -> "Food".
+8. **ANTI-HALLUCINATION**: If an item name is blurry, output "Item Unknown" or skip. Do not invent names.
 
 Output Schema:
 {
@@ -24,7 +27,8 @@ Output Schema:
       "harga": 1000,
       "namaToko": "Store",
       "metodePembayaran": "Cash",
-      "tanggal": "2024-01-01 12:00"
+      "tanggal": "2024-01-01 12:00",
+      "kategori": "Food"
     }
   ]
 }`;
@@ -50,8 +54,8 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
             }
         ];
 
-        // Use standard GPT 4o mini which supports vision
-        const parsedResponse = await openRouterChatCompletion(messages, 'openai/gpt-4o-mini');
+        // Use standard GPT 5 mini
+        const parsedResponse = await openRouterChatCompletion(messages, 'google/gemini-2.5-pro');
 
         const content = (parsedResponse as any).choices?.[0]?.message?.content;
 
