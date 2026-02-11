@@ -141,6 +141,7 @@ export async function extractTransaction(message: string, paymentMethods?: strin
     const content = (parsedResponse as any).choices?.[0]?.message?.content;
 
     if (!content) {
+      logger.error('Empty response from AI provider', { response: JSON.stringify(parsedResponse) });
       throw new ApplicationError('Empty response from AI provider');
     }
 

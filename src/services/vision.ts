@@ -50,13 +50,13 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
             }
         ];
 
-        // Use standard GPT 5 mini
-        const parsedResponse = await openRouterChatCompletion(messages, 'openai/gpt-5-mini');
+        // Use standard GPT 4o mini which supports vision
+        const parsedResponse = await openRouterChatCompletion(messages, 'openai/gpt-4o-mini');
 
         const content = (parsedResponse as any).choices?.[0]?.message?.content;
 
         if (!content) {
-            logger.error('Vision Service: Empty response from provider');
+            logger.error('Vision Service: Empty response from provider', { response: JSON.stringify(parsedResponse) });
             throw new ApplicationError('Empty response from AI vision provider');
         }
 
