@@ -165,9 +165,19 @@ async function main() {
             try {
                 if (WEBHOOK_DOMAIN) {
                     // Production: Webhook Mode
-                    // We handle updates manually via HTTP server, so just set the webhook URL
-                    await bot.telegram.setWebhook(`${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
-                    logger.info(`Bot webhook set to ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
+                    const webhookUrl = `${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`;
+
+                    // Check current webhook status to avoid redundant updates (and errors)
+                    const webhookInfo = await bot.telegram.getWebhookInfo();
+
+                    if (webhookInfo.url !== webhookUrl) {
+                        logger.info(`Updating webhook URL from ${webhookInfo.url || 'none'} to ${webhookUrl}`);
+                        await bot.telegram.setWebhook(webhookUrl);
+                        logger.info(`Bot webhook set to ${webhookUrl}`);
+                    } else {
+                        logger.info(`Webhook already correctly set to ${webhookUrl}. Skipping update.`);
+                    }
+
                     logger.info('Bot is online in WEBHOOK mode');
                 } else {
                     // Development: Polling Mode
