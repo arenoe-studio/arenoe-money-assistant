@@ -83,7 +83,8 @@ export const step1_parse = async (ctx: BotContext) => {
                 namaToko: t.namaToko,
                 // Force ask payment method for Receipts (Vision) as it's unreliable
                 // For Text, keep AI prediction if available
-                metodePembayaran: isPhoto ? undefined : (t.metodePembayaran as any)
+                metodePembayaran: isPhoto ? undefined : (t.metodePembayaran as any),
+                kategori: t.kategori
             };
 
             // Parse date or use today
