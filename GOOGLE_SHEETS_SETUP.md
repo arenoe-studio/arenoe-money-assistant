@@ -1,6 +1,46 @@
 # Panduan Setup Google Sheets Integration
 
-Fitur ini memungkinkan perubahan data di Google Sheets (Edit/Update) tersinkronisasi otomatis ke Database Bot.
+Fitur ini memungkinkan sinkronisasi **dua arah** antara Bot dan Google Sheets:
+
+- 📱 **Telegram → Sheets**: Transaksi dari bot otomatis tercatat di Google Sheets
+- 📊 **Sheets → Bot**: Perubahan manual di Sheets otomatis update database bot
+
+## Bagian A: Setup untuk Telegram → Sheets (OAuth2)
+
+### 1. Buat Project di Google Cloud Console
+
+1. Kunjungi [Google Cloud Console](https://console.cloud.google.com/)
+2. Buat project baru (misal: "Money Assistant Bot")
+3. Enable **Google Sheets API**:
+   - Search "Google Sheets API" di library
+   - Klik **Enable**
+4. Buat OAuth 2.0 Credentials:
+   - Sidebar: **APIs & Services** > **Credentials**
+   - **Create Credentials** > **OAuth client ID**
+   - Application type: **Web application**
+   - Authorized redirect URIs: `https://[YOUR-APP].koyeb.app/oauth2callback`
+   - Copy `Client ID` dan `Client Secret`
+
+### 2. Konfigurasi Environment Variables di Koyeb
+
+Tambahkan 3 environment variables di Koyeb dashboard:
+
+- `GOOGLE_CLIENT_ID`: Client ID dari GCP
+- `GOOGLE_CLIENT_SECRET`: Client Secret dari GCP
+- `GOOGLE_REDIRECT_URI`: `https://[YOUR-APP].koyeb.app/oauth2callback`
+
+### 3. Hubungkan Bot dengan Google Sheets
+
+1. Di Telegram, ketik `/connectsheets`
+2. Klik link OAuth yang diberikan bot
+3. Login dengan akun Google Anda & izinkan akses
+4. Setelah berhasil, kirim ID Spreadsheet dengan: `/setsheet SPREADSHEET_ID`
+
+✅ Sekarang setiap transaksi dari bot akan masuk ke Google Sheets!
+
+---
+
+## Bagian B: Setup untuk Sheets → Bot (Webhook)
 
 ## 1. Persiapan Google Sheet
 

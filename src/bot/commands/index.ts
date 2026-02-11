@@ -3,11 +3,15 @@ import { Telegraf, Markup } from 'telegraf';
 import { BotContext } from '../../types';
 import { transactionScene, SCENE_ID } from '../scenes/transaction';
 import { logger } from '../../utils/logger';
+import { connectSheetsCommand } from './connectsheets';
 
 /**
  * Registers all command handlers to the bot instance
  */
 export function registerCommands(bot: Telegraf<BotContext>) {
+
+    // Register connectsheets commands
+    bot.use(connectSheetsCommand);
 
     // /start - Welcome & Instructions
     bot.command('start', async (ctx) => {

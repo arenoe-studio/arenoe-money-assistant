@@ -66,6 +66,40 @@ async function main() {
                 return;
             }
 
+            // OAuth2 Callback Endpoint for Google Sheets Authorization
+            if (req.url?.startsWith('/oauth2callback') && req.method === 'GET') {
+                try {
+                    const url = new URL(req.url, `http://${req.headers.host}`);
+                    const code = url.searchParams.get('code');
+                    const state = url.searchParams.get('state'); // Telegram ID
+
+                    if (!code || !state) {
+                        res.writeHead(400, { 'Content-Type': 'text/html' });
+                        res.end('<h1>Error: Missing authorization code or state</h1>');
+                        return;
+                    }
+
+                    const { handleOAuthCallback } = await import('./services/oauth');
+                    await handleOAuthCallback(code, parseInt(state));
+
+                    res.writeHead(200, { 'Content-Type': 'text/html' });
+                    res.end(`
+                        <html>
+                        <body style="font-family: Arial; text-align: center; padding: 50px;">
+                            <h1>✅ Berhasil!</h1>
+                            <p>Akun Google Anda telah terhubung.</p>
+                            <p>Silakan kembali ke Telegram untuk melanjutkan.</p>
+                        </body>
+                        </html>
+                    `);
+                } catch (error: any) {
+                    logger.error('OAuth Callback Error', { error: error.message });
+                    res.writeHead(500, { 'Content-Type': 'text/html' });
+                    res.end(`<h1>Error: ${error.message}</h1>`);
+                }
+                return;
+            }
+
             res.writeHead(404);
             res.end();
         });

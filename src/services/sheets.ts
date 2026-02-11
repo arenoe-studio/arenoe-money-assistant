@@ -29,37 +29,51 @@ const oauth2Client = new google.auth.OAuth2(
 export async function writeTransaction(userId: number, transaction: Transaction): Promise<void> {
   try {
     // 1. Fetch user credentials from DB to get refresh token & spreadsheet ID
-    // We assume the schema exists, I will create it in a moment if not present
-    // For now, this is a placeholder query that matches our plan
-    /*
     const user = await db.query.users.findFirst({
-        where: eq(users.telegramId, userId)
+      where: eq(users.telegramId, userId)
     });
 
     if (!user || !user.refreshToken || !user.spreadsheetId) {
-        throw new ApplicationError('Google Sheets belum terhubung. Silakan konfigurasi terlebih dahulu.');
+      logger.warn(`User ${userId} has not connected Google Sheets yet. Skipping write.`);
+      return; // Silent fail - user hasn't setup sheets yet
     }
 
-    // Set credentials
+    // 2. Set credentials with refresh token
     oauth2Client.setCredentials({
-        refresh_token: user.refreshToken // In real app, decrypt this first
+      refresh_token: user.refreshToken
     });
-    */
 
-    // MOCK IMPLEMENTATION FOR PHASE 3 INITIALIZATION
-    // Since we haven't implemented the User OAuth flow/endpoints yet, 
-    // we cannot actually write without a valid token in DB.
-    // This function will be fully enabled once we have the User model and OAuth flow.
-    
-    logger.info(`[MOCK] Writing transaction to Google Sheets for user ${userId}`, transaction);
-    
-    // In a real flow:
-    // const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-    // await sheets.spreadsheets.values.append({ ... });
+    // 3. Initialize Sheets API
+    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
 
-  } catch (error) {
-    logger.error('Google Sheets Write Error', { error, userId });
-    throw new ApplicationError('Gagal menyimpan ke Google Sheets', false);
+    // 4. Prepare row data matching our sheet structure
+    // Columns: Transaction ID | Items | Harga | Nama Toko | Metode Pembayaran | Tanggal | Type
+    const row = [
+      crypto.randomUUID(), // Transaction ID
+      transaction.items,
+      transaction.harga,
+      transaction.namaToko,
+      transaction.metodePembayaran,
+      getCurrentTimestamp(),
+      'expense' // Default type, could be dynamic based on transaction context
+    ];
+
+    // 5. Append to sheet
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: user.spreadsheetId,
+      range: 'Transactions!A:G', // Sheet name and column range
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [row]
+      }
+    });
+
+    logger.info(`Successfully wrote transaction to Google Sheets for user ${userId}`);
+
+  } catch (error: any) {
+    logger.error('Google Sheets Write Error', { error: error.message, userId });
+    // Don't throw - we don't want to block the transaction if sheets fails
+    // Transaction is already saved in DB, sheets is just a mirror
   }
 }
 
@@ -67,20 +81,57 @@ export async function writeTransaction(userId: number, transaction: Transaction)
  * Writes multiple items as a batch transaction (sharing same Transaction ID)
  */
 export async function writeBatchTransaction(
-  userId: number, 
+  userId: number,
   transactions: Transaction[]
 ): Promise<void> {
-    const transactionId = uuidv4();
+  try {
+    // 1. Fetch user credentials
+    const user = await db.query.users.findFirst({
+      where: eq(users.telegramId, userId)
+    });
+
+    if (!user || !user.refreshToken || !user.spreadsheetId) {
+      logger.warn(`User ${userId} has not connected Google Sheets yet. Skipping batch write.`);
+      return; // Silent fail
+    }
+
+    // 2. Set credentials
+    oauth2Client.setCredentials({
+      refresh_token: user.refreshToken
+    });
+
+    // 3. Initialize Sheets API
+    const sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+
+    // 4. Generate shared transaction ID
+    const transactionId = crypto.randomUUID();
     const timestamp = getCurrentTimestamp();
 
+    // 5. Prepare rows
     const rows = transactions.map(tx => [
-        transactionId,
-        tx.items,
-        tx.harga,
-        tx.namaToko,
-        tx.metodePembayaran,
-        timestamp
+      transactionId,
+      tx.items,
+      tx.harga,
+      tx.namaToko,
+      tx.metodePembayaran,
+      timestamp,
+      'expense'
     ]);
 
-    logger.info(`[MOCK] Writing batch transaction ${transactionId} with ${rows.length} rows`);
+    // 6. Batch append to sheet
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: user.spreadsheetId,
+      range: 'Transactions!A:G',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: rows
+      }
+    });
+
+    logger.info(`Successfully wrote batch transaction ${transactionId} with ${rows.length} rows for user ${userId}`);
+
+  } catch (error: any) {
+    logger.error('Google Sheets Batch Write Error', { error: error.message, userId });
+    // Don't throw - transaction already saved in DB
+  }
 }

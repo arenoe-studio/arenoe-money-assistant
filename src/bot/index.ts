@@ -59,6 +59,7 @@ bot.telegram.setMyCommands([
   { command: 'cek', description: 'Lihat saldo & hutang' },
   { command: 'laporan', description: 'Laporan keuangan' },
   { command: 'setting', description: 'Menu pengaturan' },
+  { command: 'connectsheets', description: 'Hubungkan Google Sheets' },
   { command: 'help', description: 'Panduan penggunaan' },
   { command: 'cancel', description: 'Batalkan transaksi' }
 ]);
