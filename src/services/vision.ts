@@ -91,7 +91,11 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
 
     } catch (error) {
         if (error instanceof ApplicationError) throw error;
-        logger.error('Vision API Error', { error, duration: Date.now() - startTime });
+        logger.error('Vision API Error', {
+            error: error instanceof Error ? error.message : JSON.stringify(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            duration: Date.now() - startTime
+        });
         throw new ApplicationError('Fitur baca struk sedang gangguan.', false);
     }
 }

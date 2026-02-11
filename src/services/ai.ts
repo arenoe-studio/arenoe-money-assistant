@@ -8,12 +8,16 @@ import { ApplicationError } from '../utils/error';
 dotenv.config();
 
 // OpenRouter configuration
-const apiKey = process.env.OPENROUTER_API_KEY;
 const baseURL = 'https://openrouter.ai/api/v1';
 
 // Native fetch implementation to avoid OpenAI SDK header issues
 export async function openRouterChatCompletion(messages: any[], model: string = 'openai/gpt-4o-mini') {
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is missing");
+  const apiKey = process.env.OPENROUTER_API_KEY; // Read fresh from environment
+
+  if (!apiKey) {
+    logger.error("Configuration Error: OPENROUTER_API_KEY is missing in environment variables");
+    throw new Error("OPENROUTER_API_KEY is missing");
+  }
 
   const response = await fetch(`${baseURL}/chat/completions`, {
     method: 'POST',
