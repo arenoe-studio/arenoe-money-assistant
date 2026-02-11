@@ -11,7 +11,7 @@ export const step1_parse = async (ctx: BotContext) => {
     if (!ctx.session) ctx.session = {} as any;
     ctx.session.retryCount = { merchant: 0, payment: 0 };
     ctx.session.transactions = []; // Clear previous transactions
-    
+
     // Handle "Back" from Edit Menu
     if (ctx.callbackQuery && (ctx.callbackQuery as any).data === 'back_to_edit_menu') {
         const keyboard = Markup.inlineKeyboard([
@@ -26,10 +26,10 @@ export const step1_parse = async (ctx: BotContext) => {
 
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
     const isPhoto = ctx.message && 'photo' in ctx.message;
-    
+
     if (!messageText && !isPhoto) {
-      await ctx.reply('Mohon kirim pesan teks atau foto struk.');
-      return ctx.scene.leave();
+        await ctx.reply('Mohon kirim pesan teks atau foto struk.');
+        return ctx.scene.leave();
     }
 
     // Capture existing data removed as we cleared session
@@ -38,109 +38,110 @@ export const step1_parse = async (ctx: BotContext) => {
 
     let processingMsg;
     try {
-      const { getUserPaymentMethods } = await import('../../../../services/payment');
-      const userMethods = await getUserPaymentMethods(ctx.from!.id);
-      const methodNames = userMethods.map(m => m.name);
+        const { getUserPaymentMethods } = await import('../../../../services/payment');
+        const userMethods = await getUserPaymentMethods(ctx.from!.id);
+        const methodNames = userMethods.map(m => m.name);
 
-      processingMsg = await ctx.reply('⏳ Memproses...');
-      let parsed;
+        processingMsg = await ctx.reply('⏳ Memproses...');
+        let parsed;
 
-      if (isPhoto) {
-          // Handle Photo
-          const photo = (ctx.message as any).photo;
-          const largestPhoto = photo[photo.length - 1]; // Get highest resolution
-          const fileUrl = await getFileUrl(ctx, largestPhoto.file_id);
-          parsed = await analyzeReceipt(fileUrl, methodNames);
-          
-      } else {
-          // Handle Text
-          parsed = await parseMessage(messageText, methodNames);
-      }
-      
-      
-      // Clean up processing message
-      if (processingMsg) {
-        try {
-            await ctx.deleteMessage(processingMsg.message_id);
-        } catch (e) { /* ignore */ }
-      }
+        if (isPhoto) {
+            // Handle Photo
+            const photo = (ctx.message as any).photo;
+            const largestPhoto = photo[photo.length - 1]; // Get highest resolution
+            const fileUrl = await getFileUrl(ctx, largestPhoto.file_id);
+            parsed = await analyzeReceipt(fileUrl, methodNames);
 
-      // Ensure we have an array
-      const transactions = Array.isArray(parsed) ? parsed : [parsed];
+        } else {
+            // Handle Text
+            parsed = await parseMessage(messageText, methodNames);
+        }
 
-      // Handle empty result (AI returned [] or similar)
-      if (transactions.length === 0) {
-          logger.warn('Wizard Step 1: No transactions found in message', { text: messageText, isPhoto });
-          await ctx.reply('Maaf, saya tidak dapat memahami detail transaksi.\nMohon tuliskan dengan format: [Nama Item] [Harga].\nContoh: "Nasi goreng 15k"');
-          return ctx.scene.leave();
-      }
-      
-      // Merge defaults if missing (currently empty due to clear session)
-      const transactionsWithDate: PartialTransaction[] = transactions.map(t => {
-          const base: PartialTransaction = {
-              items: t.items,
-              harga: t.harga,
-              namaToko: t.namaToko,
-              // Use explicit cast or optional chaining if types mismatch
-              metodePembayaran: t.metodePembayaran as any
-          };
 
-          // Parse date or use today
-          if (t.tanggal) {
-              base.tanggal = new Date(t.tanggal);
-              (base as any)._tanggalSpecified = true;
-          } else {
-              base.tanggal = new Date();
-              (base as any)._tanggalSpecified = false;
-          }
-          return base;
-      });
+        // Clean up processing message
+        if (processingMsg) {
+            try {
+                await ctx.deleteMessage(processingMsg.message_id);
+            } catch (e) { /* ignore */ }
+        }
 
-      ctx.session.transactions = transactionsWithDate;
-      // Legacy support/Convenience
-      ctx.session.transaction = transactionsWithDate[0]; 
-      
-      logger.info('Wizard Step 1: Parsing message', { text: messageText, count: transactions.length });
+        // Ensure we have an array
+        const transactions = Array.isArray(parsed) ? parsed : [parsed];
 
-      const missing = getMissingFields(transactionsWithDate as any);
-      
-      if (missing.includes('items') || missing.includes('harga')) {
-        logger.warn('Wizard Step 1: Missing items or price in one or more items', { missing });
-        await ctx.reply('Maaf, ada item yang data item/harga tidak lengkap.');
-        return ctx.scene.leave();
-      }
+        // Handle empty result (AI returned [] or similar)
+        if (transactions.length === 0) {
+            logger.warn('Wizard Step 1: No transactions found in message', { text: messageText, isPhoto });
+            await ctx.reply('Maaf, saya tidak dapat memahami detail transaksi.\nMohon tuliskan dengan format: [Nama Item] [Harga].\nContoh: "Nasi goreng 15k"');
+            return ctx.scene.leave();
+        }
 
-      if (missing.includes('namaToko')) {
-        logger.info('Wizard Step 1: Missing merchant, asking user');
-        await ctx.reply('Beli di mana?');
-        ctx.wizard.selectStep(1);
-        return;
-      }
+        // Merge defaults if missing (currently empty due to clear session)
+        const transactionsWithDate: PartialTransaction[] = transactions.map(t => {
+            const base: PartialTransaction = {
+                items: t.items,
+                harga: t.harga,
+                namaToko: t.namaToko,
+                // Force ask payment method for Receipts (Vision) as it's unreliable
+                // For Text, keep AI prediction if available
+                metodePembayaran: isPhoto ? undefined : (t.metodePembayaran as any)
+            };
 
-      if (missing.includes('metodePembayaran')) {
-         logger.info('Wizard Step 1: Missing payment, asking user');
-         const { getPaymentMenu } = await import('../../../../utils/keyboard');
-         const { getUserPaymentMethods } = await import('../../../../services/payment');
-         const userMethods = await getUserPaymentMethods(ctx.from!.id);
-         const keyboard = getPaymentMenu('main', userMethods);
-         
-         await ctx.reply('Pilih Kategori Pembayaran', keyboard);
-         ctx.wizard.selectStep(2); // Cursor 2 is step3_payment
-         return;
-      }
+            // Parse date or use today
+            if (t.tanggal) {
+                base.tanggal = new Date(t.tanggal);
+                (base as any)._tanggalSpecified = true;
+            } else {
+                base.tanggal = new Date();
+                (base as any)._tanggalSpecified = false;
+            }
+            return base;
+        });
 
-      logger.info('Wizard Step 1: Complete, skipping to confirm');
-      ctx.wizard.selectStep(3);
-      return (ctx.wizard.steps[3] as any)(ctx);
+        ctx.session.transactions = transactionsWithDate;
+        // Legacy support/Convenience
+        ctx.session.transaction = transactionsWithDate[0];
+
+        logger.info('Wizard Step 1: Parsing message', { text: messageText, count: transactions.length });
+
+        const missing = getMissingFields(transactionsWithDate as any);
+
+        if (missing.includes('items') || missing.includes('harga')) {
+            logger.warn('Wizard Step 1: Missing items or price in one or more items', { missing });
+            await ctx.reply('Maaf, ada item yang data item/harga tidak lengkap.');
+            return ctx.scene.leave();
+        }
+
+        if (missing.includes('namaToko')) {
+            logger.info('Wizard Step 1: Missing merchant, asking user');
+            await ctx.reply('Beli di mana?');
+            ctx.wizard.selectStep(1);
+            return;
+        }
+
+        if (missing.includes('metodePembayaran')) {
+            logger.info('Wizard Step 1: Missing payment, asking user');
+            const { getPaymentMenu } = await import('../../../../utils/keyboard');
+            const { getUserPaymentMethods } = await import('../../../../services/payment');
+            const userMethods = await getUserPaymentMethods(ctx.from!.id);
+            const keyboard = getPaymentMenu('main', userMethods);
+
+            await ctx.reply('Pilih Kategori Pembayaran', keyboard);
+            ctx.wizard.selectStep(2); // Cursor 2 is step3_payment
+            return;
+        }
+
+        logger.info('Wizard Step 1: Complete, skipping to confirm');
+        ctx.wizard.selectStep(3);
+        return (ctx.wizard.steps[3] as any)(ctx);
 
     } catch (error) {
-      if (processingMsg) {
-          try {
-              await ctx.deleteMessage(processingMsg.message_id);
-          } catch (e) { /* ignore */ }
-      }
-      logger.error('Scene Start Error', { error });
-      await ctx.reply('Error memproses pesan.');
-      return ctx.scene.leave();
+        if (processingMsg) {
+            try {
+                await ctx.deleteMessage(processingMsg.message_id);
+            } catch (e) { /* ignore */ }
+        }
+        logger.error('Scene Start Error', { error });
+        await ctx.reply('Error memproses pesan.');
+        return ctx.scene.leave();
     }
 };
