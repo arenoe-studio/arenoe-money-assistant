@@ -7,79 +7,162 @@ import { ApplicationError } from '../utils/error';
 
 dotenv.config();
 
-// OpenRouter client configuration
+// OpenRouter configuration
 const apiKey = process.env.OPENROUTER_API_KEY;
-console.log("DEBUG: AI Service Config:", {
-    apiKeyPresent: !!apiKey,
-    baseURL: 'https://openrouter.ai/api/v1',
-    model: 'anthropic/claude-3-haiku'
-});
+const baseURL = 'https://openrouter.ai/api/v1';
 
-const client = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: apiKey, // Explicitly pass it to be sure
-  // Explicitly disable organization and project to avoid issues with OpenRouter
-  organization: null as any, 
-  project: null as any,
-  defaultHeaders: {
-    'HTTP-Referer': 'https://arenoe-money-assistant.com', // Optional
-    'X-Title': 'Arenoe Money Assistant', // Optional
+// Native fetch implementation to avoid OpenAI SDK header issues
+export async function openRouterChatCompletion(messages: any[], model: string = 'openai/gpt-4o-mini') {
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is missing");
+
+  const response = await fetch(`${baseURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://arenoe-money-assistant.com',
+      'X-Title': 'Arenoe Money Assistant',
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: 1024,
+      temperature: 0.1,
+      messages: messages
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorJson;
+    try {
+      errorJson = JSON.parse(errorText);
+    } catch {
+      errorJson = { message: errorText };
+    }
+    throw new Error(`OpenRouter API Error: ${response.status} - ${JSON.stringify(errorJson)}`);
   }
-});
 
-const SYSTEM_PROMPT = `Kamu adalah asisten ekstraksi data transaksi keuangan.
-Tugasmu: ekstrak 4 komponen dari pesan user:
-1. items (nama barang/jasa)
-2. harga (dalam rupiah, konversi k/rb/ribu ke angka penuh)
-3. namaToko (nama merchant/toko)
-4. metodePembayaran (Cash, OVO, GoPay, DANA, ShopeePay, BCA, Mandiri)
+  return response.json();
+}
 
-Jika ada komponen yang tidak disebutkan, set ke null.
+const SYSTEM_PROMPT = `Kamu adalah mesin ekstraksi data transaksi yang SANGAT KETAT, PRESISI, dan CERDAS dalam KATEGORISASI.
+Tugasmu: dari pesan user, ekstrak daftar transaksi menjadi JSON.
 
-Return HANYA JSON tanpa penjelasan:
+ATURAN UTAMA (ANTI-HALUSINASI):
+1. **JANGAN MENGIRA-NGIRA**. Jika data (harga, tanggal, toko) tidak tertulis secara eksplisit, return \`null\`.
+2. **Konteks**: Anggap setiap pesan adalah transaksi BARU, kecuali user secara eksplisit menulis "koreksi", "ubah", atau "salah".
+3. **Barang**: Hapus kata kerja (beli, makan, bayar). Ambil nama bendanya saja.
+   - "Beli pulsa 50k" -> items: "Pulsa"
+   - "Makan nasi goreng" -> items: "Nasi goreng"
+4. **Harga**:
+   - Jika ada "k" (15k) -> 15000.
+   - Jika ada "jt" (1.5jt) -> 1500000.
+   - Jika HANYA angka tanpa konteks uang (misal "nomor 5"), JANGAN anggap harga.
+   - Jika tidak ada harga, return \`null\`.
+5. **Toko**:
+   - Ekstrak jika user menyebut "di [Nama Toko]" atau "via [Merchant]".
+   - Jika nama barang menyiratkan toko (misal "Kopi Kenangan"), jadikan items="Kopi Kenangan" dan namaToko="Kopi Kenangan" (atau null jika tidak yakin).
+   - JANGAN menebak nama toko dari items umum (e.g. "Ayam Goreng" -> JANGAN tebak "KFC").
+6. **Tanggal**:
+   - Default: \`null\` (Gunakan hari ini di backend).
+   - Ekstrak HANYA jika user menyebut "kemarin", "tgl 5", "Jumat lalu".
+   - Format: YYYY-MM-DD (dan HH:mm jika ada jam).
+7. **Metode Pembayaran**:
+   - Ekstrak jika user menyebut "pakai OVO", "via BCA", "cash".
+   - Jika tidak disebut, return \`null\`.
+
+KATEGORISASI (WAJIB ISI):
+Pilih SATU dari kategori berikut berdasarkan items:
+- **Food**: Makanan, minuman, snack, jajanan (e.g. Nasi, Ayam, Kopi, Es Teh, Burger, Seblak).
+- **Transport**: Bensin, parkir, tol, service kendaraan, ojek online, tiket perjalanan.
+- **Shopping**: Belanja bulanan, baju, elektronik, skincare, barang rumah tangga, sabun, odol.
+- **Bills**: Pulsa, listrik, air, internet, langganan streaming, SPP, asuransi, cicilan.
+- **Health**: Obat, dokter, rumah sakit, vitamin.
+- **Entertainment**: Nonton bioskop, game, mainan, hobi, rekreasi.
+- **Other**: Sedekah, hadiah, dan lain-lain yang tidak masuk kategori di atas.
+
+CONTOH KASUS SUSAH:
+- "Pulsa 20k" -> Kategori: **Bills** (Bukan Shopping)
+- "Rokok 30k" -> Kategori: **Shopping** (Atau bisa Food/Konsumsi, tapi biasanya Shopping) -> Pilih **Shopping**.
+- "Obat batuk" -> Kategori: **Health**.
+- "Oli motor" -> Kategori: **Transport** (Perawatan kendaraan).
+- "Galon air" -> Kategori: **Food** (Kebutuhan pokok minum) atau **Shopping** (Belanja rutin). Pilih **Food**.
+
+OUTPUT FORMAT (JSON ONLY):
 {
-  "items": "string | null",
-  "harga": number | null,
-  "namaToko": "string | null",
-  "metodePembayaran": "string | null"
-}`;
+  "transactions": [
+    {
+      "items": string,
+      "harga": number | null,
+      "namaToko": string | null,
+      "metodePembayaran": string | null,
+      "tanggal": string | null,
+      "kategori": "Food" | "Transport" | "Shopping" | "Bills" | "Health" | "Entertainment" | "Other"
+    }
+  ]
+}
+
+CONTOH:
+Input: "Nasi padang 25rb"
+Output: { "transactions": [{ "items": "Nasi padang", "harga": 25000, "namaToko": null, "metodePembayaran": null, "tanggal": null, "kategori": "Food" }] }
+
+Input: "Isi gopay 50k via bca"
+Output: { "transactions": [{ "items": "Saldo GoPay", "harga": 50000, "namaToko": null, "metodePembayaran": "BCA", "tanggal": null, "kategori": "Bills" }] }
+
+Input: "Lupa tadi beli bensin 100rb di pertamina"
+Output: { "transactions": [{ "items": "Bensin", "harga": 100000, "namaToko": "Pertamina", "metodePembayaran": null, "tanggal": null, "kategori": "Transport" }] }
+`;
 
 /**
- * Extracts transaction details from a natural language message using Claude 3 Haiku via OpenRouter.
+ * Extracts transaction details from a natural language message using Open GPT 4o Mini via OpenRouter.
  * @param message The user's input message
+ * @param paymentMethods List of valid payment methods to guide extraction
  * @returns Parsed transaction data or throws error
  */
-export async function extractTransaction(message: string): Promise<ExtractionResult> {
+export async function extractTransaction(message: string, paymentMethods?: string[]): Promise<ExtractionResult[]> {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  const currentTime = now.toTimeString().split(' ')[0].substring(0, 5); // HH:mm
+
+  const methodsContext = paymentMethods ? `Metode Pembayaran Valid: ${paymentMethods.join(', ')}` : '';
+
   try {
-    const response = await client.chat.completions.create({
-      model: 'anthropic/claude-3-haiku',
-      max_tokens: 1024,
-      temperature: 0.1, // Low temperature for deterministic output
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Pesan: "${message}"` }
-      ]
-    });
-    console.log("DEBUG: OpenRouter Response Status:", response.choices ? "OK" : "Empty");
-    
-    const content = response.choices[0]?.message?.content;
-    
+    // Use native fetch instead of SDK
+    const parsedResponse = await openRouterChatCompletion([
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: `Hari ini: ${today} ${currentTime}\n${methodsContext}\nPesan: "${message}"` }
+    ]);
+    console.log("DEBUG: OpenRouter Response Status:", (parsedResponse as any).choices ? "OK" : "Empty");
+
+    const content = (parsedResponse as any).choices?.[0]?.message?.content;
+
     if (!content) {
       throw new ApplicationError('Empty response from AI provider');
     }
-    
+
     // Attempt to parse JSON
     try {
       const parsed = JSON.parse(content);
-      return ExtractionSchema.parse(parsed);
+
+      if (parsed.transactions && Array.isArray(parsed.transactions)) {
+        // Validate each item roughly or just cast
+        return parsed.transactions;
+      } else if (parsed.items) {
+        // Fallback for old single object format
+        return [parsed];
+      }
+
+      throw new Error('Invalid JSON structure');
     } catch (parseError) {
       logger.error('Failed to parse AI response', { content, error: parseError });
       throw new ApplicationError('Failed to parse AI response format');
     }
   } catch (error) {
+    console.error("DEBUG: raw error in extractTransaction:", error);
     if (error instanceof ApplicationError) throw error;
-    
     logger.error('OpenRouter API Error', { error });
-    throw new ApplicationError('AI Service currently unavailable', false);
+    // Don't throw here if we want to fallback to regex entirely in caller? 
+    // But caller expects Promise<ExtractionResult[]>.
+    throw new ApplicationError('Jasa AI sedang tidak tersedia', false);
   }
 }

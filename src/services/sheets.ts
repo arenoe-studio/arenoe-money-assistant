@@ -82,6 +82,5 @@ export async function writeBatchTransaction(
         timestamp
     ]);
 
-    // TODO: Call Sheets API with batchUpdate
     logger.info(`[MOCK] Writing batch transaction ${transactionId} with ${rows.length} rows`);
 }

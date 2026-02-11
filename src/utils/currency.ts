@@ -15,34 +15,62 @@ import currency from 'currency.js';
 export function parseCurrency(input: string): number | null {
   if (!input) return null;
 
-  let cleanInput = input.toLowerCase().trim();
+  // 1. Basic cleanup: remove currency symbol, trim
+  let cleanInput = input.toLowerCase().trim()
+    .replace(/^rp\.?\s*/, '')
+    .replace(/\s+/g, ' '); // normalize spaces
 
-  // Remove RP prefix if present
-  cleanInput = cleanInput.replace(/^rp\.?\s*/, '');
+  // 2. check for suffixes
+  const suffixes = ['jt', 'juta', 'm', 'mn', 'rb', 'ribu', 'k', 'kb', 'ratus', 'rat'];
+  const hasSuffix = suffixes.some(s => cleanInput.includes(s));
 
-  let multiplier = 1;
-
-  // Check suffixes
-  if (cleanInput.endsWith('k') || cleanInput.endsWith('kb')) {
-    multiplier = 1000;
-    cleanInput = cleanInput.replace(/kb?$/, '');
-  } else if (cleanInput.endsWith('rb') || cleanInput.endsWith('ribu')) {
-    multiplier = 1000;
-    cleanInput = cleanInput.replace(/r(b|ibu)$/, '');
+  if (!hasSuffix) {
+      // Standard number parsing (IDR format: 1.000.000,00)
+      // Remove dots (thousand separators), replace comma with dot (decimal).
+      const standardClean = cleanInput.replace(/\./g, '').replace(/,/g, '.');
+      const val = parseFloat(standardClean);
+      return !isNaN(val) && val > 0 ? val : null;
   }
 
-  cleanInput = cleanInput.trim();
+  // 3. Complex Parsing (Chunk-based)
+  let total = 0;
+  let currentBuffer = 0;
+  let hasMatch = false;
 
-  // Handle Indonesian thousands separator (period) vs decimal (comma)
-  // Standardize: remove dots, replace comma with dot
-  cleanInput = cleanInput.replace(/\./g, '').replace(/,/g, '.');
+  const regex = /(\d+(?:[.,]\d+)?)\s*([a-z]*)/g;
+  
+  let match;
+  while ((match = regex.exec(cleanInput)) !== null) {
+      const numStr = match[1];
+      const suffix = match[2];
 
-  if (!cleanInput || isNaN(Number(cleanInput))) {
-    return null;
+      if (!numStr) continue;
+
+      // Normalize number
+      const val = parseFloat(numStr.replace(',', '.'));
+      if (isNaN(val)) continue;
+
+      hasMatch = true;
+
+      if (['jt', 'juta', 'm', 'mn'].includes(suffix)) {
+          total += (currentBuffer + val) * 1000000;
+          currentBuffer = 0;
+      } 
+      else if (['rb', 'ribu', 'k', 'kb'].includes(suffix)) {
+          total += (currentBuffer + val) * 1000;
+          currentBuffer = 0;
+      }
+      else if (['ratus', 'rat'].includes(suffix)) {
+          currentBuffer += val * 100;
+      }
+      else {
+          currentBuffer += val;
+      }
   }
 
-  const value = currency(cleanInput, { precision: 0 }).value;
-  return value * multiplier;
+  total += currentBuffer;
+
+  return hasMatch && total > 0 ? total : null;
 }
 
 /**

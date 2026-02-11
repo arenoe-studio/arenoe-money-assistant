@@ -1,0 +1,191 @@
+
+import { Scenes, Markup } from 'telegraf';
+import { BotContext } from '../../../types';
+import { logger } from '../../../utils/logger';
+import { getUserPaymentMethods } from '../../../services/payment';
+import { addBalance } from '../../../services/balance';
+import { parseCurrency, formatCurrency } from '../../../utils/currency';
+import { titleCase } from '../../../utils/format';
+import { getPaymentMenu } from '../../../utils/keyboard';
+
+export const INCOME_SCENE_ID = 'income_wizard';
+
+const step0_askMethod = async (ctx: BotContext) => {
+    try {
+        const methods = await getUserPaymentMethods(ctx.from!.id);
+        const keyboard = getPaymentMenu('main', methods);
+
+        await ctx.reply('💰 Untuk metode apa income ini?', keyboard);
+        return ctx.wizard.next();
+    } catch (error) {
+        logger.error('Income Scene Step 0 Error', { error });
+        await ctx.reply('Terjadi kesalahan memuat data.');
+        return ctx.scene.leave();
+    }
+};
+
+/**
+ * Helper to handle category navigation in income scene
+ */
+const handleIncomeCategoryNav = async (ctx: BotContext) => {
+    if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const action = (ctx.callbackQuery as any).data;
+
+        // Category Navigation
+        if (action.startsWith('cat_')) {
+            const category = action.replace('cat_', '');
+            const type = category === 'main' ? 'main' : category;
+
+
+            const methods = await getUserPaymentMethods(ctx.from!.id);
+            const keyboard = getPaymentMenu(type as any, methods);
+
+            let message = '💰 Untuk metode apa income ini?';
+            if (type === 'bank') message = '🏦 Pilih Bank:';
+            if (type === 'ewallet') message = '📱 Pilih E-Wallet:';
+
+            try {
+                await ctx.editMessageText(message, keyboard);
+            } catch (e) {
+                // Ignore if message is same
+            }
+            await ctx.answerCbQuery();
+            return 'NAVIGATING';
+        }
+    }
+    return 'NONE';
+};
+
+const step1_processMethod = async (ctx: BotContext) => {
+    // First, check if it's category navigation
+    const navResult = await handleIncomeCategoryNav(ctx);
+    if (navResult === 'NAVIGATING') return; // Stay in step
+
+    // Handle payment selection
+    if (ctx.callbackQuery && 'data' in ctx.callbackQuery) {
+        const action = (ctx.callbackQuery as any).data;
+
+        // Use 'pay_' prefix to match other scenes
+        if (action.startsWith('pay_')) {
+            const method = action.replace('pay_', '');
+            (ctx.wizard.state as any).method = method;
+            await ctx.answerCbQuery();
+
+            await ctx.editMessageText(
+                `✅ Metode: ${method}\n\nMasukkan keterangan dan nominal income (Contoh: "Gaji 10jt" atau "Bonus 500rb"):`
+            );
+            return ctx.wizard.next();
+        }
+    }
+
+    // Ignore text input
+    if (ctx.message) {
+        await ctx.reply('⚠️ Mohon pilih metode menggunakan tombol.');
+        return;
+    }
+};
+
+const step2_processInput = async (ctx: BotContext) => {
+    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+
+    if (!text) {
+        await ctx.reply('⚠️ Format salah. Kirim teks deskripsi dan nominal.');
+        return;
+    }
+
+    try {
+        const amount = parseCurrency(text);
+
+        if (!amount || amount <= 0) {
+            await ctx.reply('⚠️ Nominal tidak ditemukan atau tidak valid. Pastikan menulis angka (contoh: 5jt, 50000).');
+            return;
+        }
+
+
+        // Strategy: Strip all detected currency parts from the user input.
+        // If the remaining string is empty or trivial, assume user only entered nominal.
+        let description = text;
+        const currencyRegex = /(\d+(?:[.,]\d+)?)\s*(jt|juta|m|mn|rb|ribu|k|kb|ratus|rat|rp|rupiah)?/gi;
+        description = description.replace(currencyRegex, '').replace(/\s+/g, ' ').trim();
+
+        // Remove isolated currency words if they were left over (e.g. "rupiah")
+        // description = description.replace(/\b(rupiah|rp)\b/gi, '').trim();
+
+        if (!description || description.length < 2) {
+            (ctx.wizard.state as any).amount = amount;
+            await ctx.reply('📝 Masukkan keterangan untuk income ini:');
+            return ctx.wizard.next();
+        }
+
+        (ctx.wizard.state as any).amount = amount;
+        (ctx.wizard.state as any).description = description;
+
+        return step3_finalize(ctx);
+
+    } catch (error) {
+        logger.error('Income Process Error', { error });
+        await ctx.reply('❌ Gagal mencatat income.');
+        return ctx.scene.leave();
+    }
+};
+
+const step3_finalize = async (ctx: BotContext) => {
+    // If we came from step 2 via next(), description is in message
+    if (!ctx.wizard.state.description) {
+        const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+        if (!text) {
+            await ctx.reply('⚠️ Harap kirim teks keterangan.');
+            return;
+        }
+        (ctx.wizard.state as any).description = text;
+    }
+
+    const state = ctx.wizard.state as any;
+    const { amount, description, method } = state;
+
+    try {
+        // 1. Add Balance
+        const result = await addBalance(ctx.from!.id, method, amount);
+
+        // 2. Save Transaction Record
+        const { db } = await import('../../../db/client');
+        const { transactions: transactionTable } = await import('../../../db/schema');
+        const { getOrCreateUser } = await import('../../../services/user');
+
+        const user = await getOrCreateUser(ctx.from!.id);
+
+        await db.insert(transactionTable).values({
+            userId: user.id,
+            transactionId: crypto.randomUUID(),
+            items: description,
+            harga: amount,
+            namaToko: 'Income',
+            metodePembayaran: method,
+            type: 'income',
+            tanggal: new Date(),
+            syncedToSheets: false
+        });
+
+        await ctx.reply(
+            `✅ Income Tercatat:\n\n` +
+            `📝 Keterangan: ${description}\n` +
+            `💰 Nominal: ${formatCurrency(amount)}\n` +
+            `💳 Metode: ${method}\n` +
+            `📈 Saldo Baru: ${formatCurrency(result.newBalance)}`
+        );
+
+        return ctx.scene.leave();
+    } catch (error) {
+        logger.error('Income Finalize Error', { error });
+        await ctx.reply('❌ Gagal mencatat income.');
+        return ctx.scene.leave();
+    }
+};
+
+export const incomeScene = new Scenes.WizardScene<BotContext>(
+    INCOME_SCENE_ID,
+    step0_askMethod,
+    step1_processMethod,
+    step2_processInput,
+    step3_finalize
+);

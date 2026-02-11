@@ -1,7 +1,7 @@
 {
   "name": "project--arenoe-money-assistant",
   "version": "1.0.0",
-  "description": "",
+  "description": "Telegram Bot for Personal Finance Tracking with AI & Google Sheets Sync",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -27,6 +27,7 @@
     "drizzle-kit": "^0.31.9",
     "eslint": "^9.39.2",
     "prettier": "^3.8.1",
+    "ts-node": "^10.9.2",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",

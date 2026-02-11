@@ -4,6 +4,7 @@ import { PartialTransaction } from '../schemas/transaction';
 // Session Data Interface
 export interface SessionData extends Scenes.WizardSessionData {
   transaction?: PartialTransaction; 
+  transactions?: PartialTransaction[]; 
   retryCount?: {
     merchant: number;
     payment: number;

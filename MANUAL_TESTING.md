@@ -1,78 +1,60 @@
-# Manual Testing Checklist for Money Assistant Bot
+# Manual Testing Checklist
 
-Use this checklist to verify the bot functionality manually in Telegram.
+Gunakan checklist ini untuk memverifikasi fungsionalitas bot secara manual di Telegram dan Google Sheets.
 
-## 1. Setup Verification
+## 1. Setup & Basic Flow
 
-- [ ] **Startup**: Run `npm run start`. Verify logs show "Bot is online".
-- [ ] **Database**: Verify database connection text in logs.
-- [ ] **Bot Info**: Send `/status` to the bot. It should reply with State: Idle.
+- [ ] **Startup**: Pastikan bot online (`/start` merespons).
+- [ ] **Bot Info**: `/status` menampilkan "State: Idle".
+- [ ] **Help**: `/help` menampilkan daftar perintah yang benar.
 
-## 2. Core Transaction Flows (Happy Paths)
+## 2. Core Transaction (Pencatatan)
 
-### A. Complete Natural Language Input
+### A. Kalimat Lengkap (Natural Language)
 
 _Input_: "Nasi Goreng 15k di Warteg Bahari pakai Cash"
 
-- [ ] Bot replies with **Konfirmasi**.
-- [ ] Item: Nasi Goreng
-- [ ] Harga: Rp 15.000
-- [ ] Toko: Warteg Bahari
-- [ ] Bayar: Cash
-- [ ] Action: Click **✅ YA**.
-- [ ] Bot replies "✅ Tercatat!". (Check logs for mock write if DB not ready).
+- [ ] Bot membalas dengan **Konfirmasi**.
+- [ ] Data Valid: Item (Nasi Goreng), Harga (15.000), Toko (Warteg Bahari), Metode (Cash).
+- [ ] Klik **✅ YA**. Balasan: "✅ Tercatat!".
+- [ ] Cek `/laporan`: Transaksi harus muncul.
 
-### B. Partial Input (Missing Merchant & Payment)
+### B. Input Parsial (Interaktif)
 
 _Input_: "Beli Pulsa 50rb"
 
-- [ ] Bot asks "Beli di mana?"
-- [ ] _Input_: "Indomaret"
-- [ ] Bot asks "Bayar pakai apa?"
-- [ ] _Input_: "OVO"
-- [ ] Bot shows Confirmation with correct data.
+- [ ] Bot tanya: "Beli di mana?" → Jawab: "Indomaret".
+- [ ] Bot tanya: "Bayar pakai apa?" → Jawab: "OVO".
+- [ ] Konfirmasi muncul dengan data lengkap.
 
-### C. Partial Input (Missing Payment)
+### C. Error Handling
 
-_Input_: "Kopi 20rb di Janji Jiwa"
+- [ ] **Harga Kosong**: "Makan siang" → Bot tolak ("Harga/Item tidak ditemukan").
+- [ ] **Metode Salah**: Jawab "Daun" saat ditanya metode bayar → Bot minta ulang.
+- [ ] **Cancel**: Ketik `/cancel` atau klik tombol "Batal" saat konfirmasi → Transaksi dibatalkan.
 
-- [ ] Bot asks "Bayar pakai apa?"
-- [ ] _Input_: "GoPay"
-- [ ] Bot shows Confirmation.
+## 3. Fitur Keuangan
 
-## 3. Validation & Error Handling
+- [ ] **Cek Saldo**: `/cek` menampilkan saldo per metode pembayaran.
+- [ ] **Set Saldo**: `/setting` > Set Saldo Awal. Update saldo OVO jadi 500k. Cek `/cek` lagi.
+- [ ] **Hutang (PayLater)**:
+  - Input: "Hutang ke Budi 100k beli pulsa".
+  - Masuk ke menu PayLater? Atau tercatat sebagai Expense biasa tipe Debt?
+  - Cek command `/paylater`.
+- [ ] **Laporan**: `/laporan` > Pilih "Bulan Ini". Pastikan total sesuai.
 
-### D. Invalid Price
+## 4. Google Sheets Sync
 
-_Input_: "Makan" (No price)
-
-- [ ] Bot replies "Maaf, saya tidak menangkap nama item atau harga."
-
-### E. Invalid Payment Method
-
-_Input_: "Roti 5k di Omah" -> "Bayar pakai apa?" -> "Daun"
-
-- [ ] Bot replies "Metode tidak valid. Pilih: Cash, OVO, ..."
-- [ ] Retry with "Cash". Should proceed.
-
-### F. Invalid Merchant (Only Numbers)
-
-_Input_: "Roti 5k" -> "Beli di mana?" -> "123"
-
-- [ ] Bot replies "Nama toko tidak valid".
-- [ ] Retry with "Toko 123". Should proceed.
-
-## 4. Commands
-
-- [ ] **/start**: Shows welcome message.
-- [ ] **/help**: Shows help guide.
-- [ ] **/cancel**:
-  - During a flow: "Transaksi dibatalkan."
-  - Idle: "Tidak ada transaksi yang aktif."
-- [ ] **/debug**: Toggles debug mode logs.
+- [ ] **Create from Sheet**:
+  - Buka Google Sheet "Transactions".
+  - Isi baris baru manual (Item: "Test Sheet", Harga: 12345, dll).
+  - Tunggu ~5 detik. Cek di bot (Laporan hari ini).
+- [ ] **Update from Sheet**:
+  - Ubah harga transaksi "Test Sheet" jadi 50000.
+  - Cek di bot apakah harga terupdate.
+  - Cek saldo Cash (jika pakai Cash), apakah terpotong sesuai harga baru.
 
 ## 5. Edge Cases
 
-- [ ] **Timeout**: Start a transaction and wait 3 minutes. Bot should say "Waktu habis".
-- [ ] **Cancel Button**: At confirmation, click "🗑 Batal Catat". Should cancel.
-- [ ] **No Button**: Replies "Transaksi dibatalkan".
+- [ ] **Timeout**: Diamkan bot saat flow aktif selama 3 menit → Bot harus reset ke Idle.
+- [ ] **Emoji**: Input dengan emoji "🍔 Burger 50k" → Bot harus tetap bisa parsing.
