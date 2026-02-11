@@ -8,14 +8,14 @@ const RECEIPT_PROMPT = `Analyze this image as a shopping receipt.
 Extract visible text and categorize items intelligently.
 
 RULES:
-1. **OUTPUT**: Must be valid JSON only.
+1. **OUTPUT**: Return RAW JSON only. NO MARKDOWN (no \`\`\`json). NO PROLOGUE/EPILOGUE.
 2. **ITEMS**: Extract main line items. Ignore tax, subtotal, change, cashback.
 3. **PRICE**: Use exact numbers visible.
 4. **DATE**: Extract date/time if printed. Format: YYYY-MM-DD HH:mm (or null).
 5. **MERCHANT**: Extract merchant name from header/logo.
 6. **PAYMENT**: Detect payment method (Cash/Card/QRIS) if shown.
 7. **CATEGORY**: Infer category based on item name.
-   - Use: "Food" (Meals), "Drink" (Beverages, Coffee), "Snack" (Light food), "Transport" (Fuel, Parking), "Shopping" (Groceries), "Health", "Other".
+   - Use: "Food", "Drink", "Snack", "Transport", "Shopping", "Health", "Other".
    - Example: "Cokelat Hangat" -> "Drink", "Nasi Goreng" -> "Food".
 8. **ANTI-HALLUCINATION**: If an item name is blurry, output "Item Unknown" or skip. Do not invent names.
 
@@ -55,7 +55,7 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
         ];
 
         // Use standard GPT 5 mini
-        const parsedResponse = await openRouterChatCompletion(messages, 'google/gemini-2.5-pro');
+        const parsedResponse = await openRouterChatCompletion(messages, 'openai/gpt-5-mini');
 
         const content = (parsedResponse as any).choices?.[0]?.message?.content;
 

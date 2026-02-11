@@ -29,7 +29,7 @@ export async function openRouterChatCompletion(messages: any[], model: string = 
     },
     body: JSON.stringify({
       model: model,
-      max_tokens: 1024,
+      max_tokens: 4096,
       temperature: 0.1,
       messages: messages
     })
