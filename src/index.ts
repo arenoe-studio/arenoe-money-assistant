@@ -112,53 +112,45 @@ async function main() {
         const WEBHOOK_DOMAIN = process.env.WEBHOOK_DOMAIN; // e.g. https://your-app.koyeb.app
         const WEBHOOK_PATH = '/webhook/telegram';
 
-        let botRetries = 10;
+        // 1. Set Bot Profile (Best Effort - Don't block startup if rate limited)
+        try {
+            await bot.telegram.setMyCommands([
+                { command: 'start', description: 'Mulai menggunakan bot' },
+                { command: 'income', description: 'Catat pemasukan' },
+                { command: 'paylater', description: 'Menu Hutang (Catat/Bayar)' },
+                { command: 'cek', description: 'Lihat saldo & hutang' },
+                { command: 'laporan', description: 'Laporan keuangan' },
+                { command: 'setting', description: 'Menu pengaturan' },
+                { command: 'connectsheets', description: 'Hubungkan Google Sheets' },
+                { command: 'help', description: 'Panduan penggunaan' },
+                { command: 'cancel', description: 'Batalkan transaksi' }
+            ]);
+            await bot.telegram.setMyShortDescription('Asisten Keuangan Pribadi 💰\nCatat pengeluaran & pemasukan dengan mudah.');
+            logger.info('Bot profile updated successfully');
+        } catch (e: any) {
+            logger.warn('Failed to update bot profile (likely rate limited), continuing startup...', { error: e.message });
+        }
+
+        // 2. Launch Bot
+        let botRetries = 5;
         while (botRetries > 0) {
             try {
-                // Set Bot Profile Info (Commands & Description)
-                await bot.telegram.setMyCommands([
-                    { command: 'start', description: 'Mulai menggunakan bot' },
-                    { command: 'income', description: 'Catat pemasukan' },
-                    { command: 'paylater', description: 'Menu Hutang (Catat/Bayar)' },
-                    { command: 'cek', description: 'Lihat saldo & hutang' },
-                    { command: 'laporan', description: 'Laporan keuangan' },
-                    { command: 'setting', description: 'Menu pengaturan' },
-                    { command: 'connectsheets', description: 'Hubungkan Google Sheets' },
-                    { command: 'help', description: 'Panduan penggunaan' },
-                    { command: 'cancel', description: 'Batalkan transaksi' }
-                ]);
-
-                // Set Short Description
-                try {
-                    await bot.telegram.setMyShortDescription('Asisten Keuangan Pribadi 💰\nCatat pengeluaran & pemasukan dengan mudah.');
-                } catch (e) {
-                    logger.warn('Failed to set short description', { error: e });
-                }
-
-                // Production: Use Webhook if WEBHOOK_DOMAIN is set
                 if (WEBHOOK_DOMAIN) {
-                    // Delete any existing webhook first (clean slate)
-                    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-
-                    // Set new webhook
-                    await bot.telegram.setWebhook(`${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
-
-                    // Start bot in webhook mode (no polling)
+                    // Production: Webhook Mode
                     await bot.launch({
                         webhook: {
                             domain: WEBHOOK_DOMAIN,
                             path: WEBHOOK_PATH
-                        }
+                        },
+                        dropPendingUpdates: false
                     });
-
                     logger.info(`Bot is online in WEBHOOK mode at ${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`);
                 } else {
-                    // Development: Use Polling
+                    // Development: Polling Mode
                     await bot.launch();
                     logger.info('Bot is online in POLLING mode (development)');
                 }
 
-                logger.info('Bot profile updated successfully');
                 break; // Success
             } catch (botError: any) {
                 logger.error(`Bot launch failed. Retries left: ${botRetries - 1}`, { error: botError.message });
@@ -167,7 +159,9 @@ async function main() {
                     logger.error('Max retries reached. Exiting.');
                     process.exit(1);
                 }
-                await new Promise(res => setTimeout(res, 5000)); // Wait 5s before retry
+                const waitTime = 5000 * (6 - botRetries);
+                logger.info(`Waiting ${waitTime}ms before retry...`);
+                await new Promise(res => setTimeout(res, waitTime));
             }
         }
 
