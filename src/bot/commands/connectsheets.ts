@@ -13,17 +13,21 @@ connectSheetsCommand.command('connectsheets', async (ctx) => {
         // Generate OAuth URL
         const authUrl = getAuthUrl(telegramId);
 
+        const keyboard = {
+            inline_keyboard: [
+                [{ text: '🔐 Login Google Account', url: authUrl }]
+            ]
+        };
+
         await ctx.reply(
-            `🔗 *Hubungkan Google Sheets*\n\n` +
-            `Untuk mengaktifkan sinkronisasi otomatis ke Google Sheets, ikuti langkah berikut:\n\n` +
-            `1️⃣ Klik link di bawah untuk login dengan akun Google Anda\n` +
-            `2️⃣ Berikan izin akses ke Spreadsheet\n` +
-            `3️⃣ Setelah berhasil, kirim ID Spreadsheet Anda dengan format:\n` +
-            `   \`/setsheet SPREADSHEET_ID\`\n\n` +
-            `Link otorisasi:\n${authUrl}\n\n` +
-            `💡 Spreadsheet ID bisa ditemukan di URL Google Sheets Anda:\n` +
-            `https://docs.google.com/spreadsheets/d/**SPREADSHEET_ID**/edit`,
-            { parse_mode: 'Markdown' }
+            '🔗 *Hubungkan Google Sheets*\n\n' +
+            'Klik tombol di bawah untuk login dan memberikan izin akses ke Google Sheets Anda.\n\n' +
+            'Setelah sukses, copy **ID Spreadsheet** Anda (bagian acak di URL Sheet setelah `/d/`) dan kirim perintah:\n\n' +
+            '`/setsheet ID_SPREADSHEET`',
+            {
+                parse_mode: 'Markdown',
+                reply_markup: keyboard
+            }
         );
 
         logger.info(`User ${telegramId} requested Google Sheets connection`);
