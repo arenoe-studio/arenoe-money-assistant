@@ -26,6 +26,10 @@ export const step5_action = async (ctx: BotContext) => {
 
     // Handle Confirmation
     if (action === 'confirm_yes') {
+        const state = ctx.scene.state as any;
+        if (state.processing) return; // Prevent double clicks
+        state.processing = true;
+
         try {
             await ctx.answerCbQuery('Menyimpan...');
 
@@ -33,15 +37,21 @@ export const step5_action = async (ctx: BotContext) => {
             const successMessage = await saveAndFormatTransaction(ctx);
 
             try {
-                await ctx.editMessageText(successMessage);
+                // Explicitly edit the message attached to the callback query
+                await ctx.editMessageText(successMessage, { reply_markup: undefined });
             } catch (error) {
-                logger.warn('Failed to edit message in success step', { error });
+                logger.warn('Failed to edit message in success step, falling back to reply', { error });
+                // If edit fails, we try to delete previous and send new to mimic update
+                try {
+                    await ctx.deleteMessage();
+                } catch { }
                 await ctx.reply(successMessage);
             }
 
             return ctx.scene.leave();
 
         } catch (error) {
+            state.processing = false;
             await ctx.reply('❌ Gagal menyimpan transaksi.');
             logger.error('Save failed', { error });
             return ctx.scene.leave();

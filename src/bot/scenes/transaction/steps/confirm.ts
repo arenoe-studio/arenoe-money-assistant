@@ -116,7 +116,7 @@ Benar? ketik YA / TIDAK`;
             logger.error('Auto-confirm failed', { error });
             // Cannot rely on reply here easily if things failed hard
         }
-    }, 5000);
+    }, 30000);
 
     ctx.wizard.next();
     return;
