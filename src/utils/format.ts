@@ -34,14 +34,25 @@ export function autoCategory(name: string | null | undefined): string {
 export function formatDate(date: Date | undefined, includeTime: boolean = false): string {
   const dt = date ? DateTime.fromJSDate(date) : DateTime.now();
 
+  if (date) {
+    console.log('[formatDate] Input Date:', date.toISOString(), 'Local:', date.toString());
+    console.log('[formatDate] DateTime after fromJSDate:', dt.toISO(), 'Zone:', dt.zoneName);
+  }
+
   // Set locale to id-ID
   const local = dt.setLocale('id-ID').setZone('Asia/Jakarta');
 
+  console.log('[formatDate] After setZone:', local.toISO(), 'Zone:', local.zoneName);
+
   if (includeTime) {
-    return local.toFormat("dd MMMM yyyy (HH:mm) 'WIB'");
+    const result = local.toFormat("dd MMMM yyyy (HH:mm) 'WIB'");
+    console.log('[formatDate] Output with time:', result);
+    return result;
   }
 
-  return local.toFormat('dd MMMM yyyy');
+  const result = local.toFormat('dd MMMM yyyy');
+  console.log('[formatDate] Output without time:', result);
+  return result;
 }
 
 /**
@@ -50,25 +61,34 @@ export function formatDate(date: Date | undefined, includeTime: boolean = false)
  * Without this, new Date() treats it as UTC and adds 7 hours when displaying in WIB
  */
 export function parseDateAsWIB(dateString: string): Date {
+  console.log('[parseDateAsWIB] Input:', dateString);
+
   // Try date-time format first (YYYY-MM-DD HH:mm)
   let dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd HH:mm', { zone: 'Asia/Jakarta' });
 
   if (!dt.isValid) {
     // Try date-only format (YYYY-MM-DD) - will set time to 00:00
     dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd', { zone: 'Asia/Jakarta' });
+    console.log('[parseDateAsWIB] Parsed as date-only:', dt.toISO(), 'Zone:', dt.zoneName);
+  } else {
+    console.log('[parseDateAsWIB] Parsed as date-time:', dt.toISO(), 'Zone:', dt.zoneName);
   }
 
   if (!dt.isValid) {
     // Fallback: try ISO format
     const isoDate = DateTime.fromISO(dateString, { zone: 'Asia/Jakarta' });
     if (isoDate.isValid) {
+      console.log('[parseDateAsWIB] Parsed as ISO:', isoDate.toISO());
       return isoDate.toJSDate();
     }
     // Last resort: use current time
+    console.log('[parseDateAsWIB] Failed to parse, using current time');
     return new Date();
   }
 
-  return dt.toJSDate();
+  const jsDate = dt.toJSDate();
+  console.log('[parseDateAsWIB] Output JS Date:', jsDate.toISOString(), 'Local:', jsDate.toString());
+  return jsDate;
 }
 
 /**
