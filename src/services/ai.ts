@@ -61,23 +61,31 @@ ATURAN UTAMA (ANTI-HALUSINASI):
 4. **Harga**:
    - Jika ada "k" (15k) -> 15000.
    - Jika ada "jt" (1.5jt) -> 1500000.
+   - Jika ada "rb" (25rb) -> 25000.
    - Jika HANYA angka tanpa konteks uang (misal "nomor 5"), JANGAN anggap harga.
    - Jika tidak ada harga, return \`null\`.
 5. **Toko**:
    - Ekstrak jika user menyebut "di [Nama Toko]" atau "via [Merchant]".
    - Jika nama barang menyiratkan toko (misal "Kopi Kenangan"), jadikan items="Kopi Kenangan" dan namaToko="Kopi Kenangan" (atau null jika tidak yakin).
    - JANGAN menebak nama toko dari items umum (e.g. "Ayam Goreng" -> JANGAN tebak "KFC").
-6. **Tanggal**:
+6. **Tanggal** (PENTING - DETEKSI LEBIH BAIK):
    - Default: \`null\` (Gunakan hari ini di backend).
-   - Ekstrak HANYA jika user menyebut "kemarin", "tgl 5", "Jumat lalu".
-   - Format: YYYY-MM-DD (dan HH:mm jika ada jam).
+   - Ekstrak jika user menyebut tanggal dalam format apapun:
+     * "2 februari 2026" -> "2026-02-02"
+     * "15 jan 2026" -> "2026-01-15"
+     * "kemarin" -> hitung dari CURRENT_DATE
+     * "tgl 5" -> tahun/bulan sekarang, tanggal 5
+     * "Jumat lalu" -> hitung dari CURRENT_DATE
+     * "3 hari yang lalu" -> hitung dari CURRENT_DATE
+   - Format output: YYYY-MM-DD
+   - **PRIORITAS**: Jika ada tanggal di awal pesan (misal "2 februari 2026 pentol 14k"), PASTI ekstrak tanggalnya.
 7. **Metode Pembayaran**:
-   - Ekstrak jika user menyebut "pakai OVO", "via BCA", "cash".
+   - Ekstrak jika user menyebut "pakai OVO", "via BCA", "cash", "gopay", "dana", dll.
    - Jika tidak disebut, return \`null\`.
 
 KATEGORISASI (WAJIB ISI):
 Pilih SATU dari kategori berikut berdasarkan items:
-- **Food**: Makanan, minuman, snack, jajanan (e.g. Nasi, Ayam, Kopi, Es Teh, Burger, Seblak).
+- **Food**: Makanan, minuman, snack, jajanan (e.g. Nasi, Ayam, Kopi, Es Teh, Burger, Seblak, Pentol).
 - **Transport**: Bensin, parkir, tol, service kendaraan, ojek online, tiket perjalanan.
 - **Shopping**: Belanja bulanan, baju, elektronik, skincare, barang rumah tangga, sabun, odol.
 - **Bills**: Pulsa, listrik, air, internet, langganan streaming, SPP, asuransi, cicilan.
@@ -87,10 +95,11 @@ Pilih SATU dari kategori berikut berdasarkan items:
 
 CONTOH KASUS SUSAH:
 - "Pulsa 20k" -> Kategori: **Bills** (Bukan Shopping)
-- "Rokok 30k" -> Kategori: **Shopping** (Atau bisa Food/Konsumsi, tapi biasanya Shopping) -> Pilih **Shopping**.
-- "Obat batuk" -> Kategori: **Health**.
-- "Oli motor" -> Kategori: **Transport** (Perawatan kendaraan).
-- "Galon air" -> Kategori: **Food** (Kebutuhan pokok minum) atau **Shopping** (Belanja rutin). Pilih **Food**.
+- "Rokok 30k" -> Kategori: **Shopping**
+- "Obat batuk" -> Kategori: **Health**
+- "Oli motor" -> Kategori: **Transport** (Perawatan kendaraan)
+- "Galon air" -> Kategori: **Food** (Kebutuhan pokok minum)
+- "2 februari 2026 pentol 14k" -> items: "Pentol", harga: 14000, tanggal: "2026-02-02", kategori: "Food"
 
 OUTPUT FORMAT (JSON ONLY):
 {
@@ -110,11 +119,11 @@ CONTOH:
 Input: "Nasi padang 25rb"
 Output: { "transactions": [{ "items": "Nasi padang", "harga": 25000, "namaToko": null, "metodePembayaran": null, "tanggal": null, "kategori": "Food" }] }
 
-Input: "Isi gopay 50k via bca"
-Output: { "transactions": [{ "items": "Saldo GoPay", "harga": 50000, "namaToko": null, "metodePembayaran": "BCA", "tanggal": null, "kategori": "Bills" }] }
+Input: "2 februari 2026 pentol 14k"
+Output: { "transactions": [{ "items": "Pentol", "harga": 14000, "namaToko": null, "metodePembayaran": null, "tanggal": "2026-02-02", "kategori": "Food" }] }
 
-Input: "Lupa tadi beli bensin 100rb di pertamina"
-Output: { "transactions": [{ "items": "Bensin", "harga": 100000, "namaToko": "Pertamina", "metodePembayaran": null, "tanggal": null, "kategori": "Transport" }] }
+Input: "kemarin beli bensin 100rb di pertamina"
+Output: { "transactions": [{ "items": "Bensin", "harga": 100000, "namaToko": "Pertamina", "metodePembayaran": null, "tanggal": "[YESTERDAY_DATE]", "kategori": "Transport" }] }
 `;
 
 /**

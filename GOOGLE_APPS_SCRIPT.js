@@ -8,8 +8,9 @@
  * 1. Go to Project Settings (Gear Icon) -> Script Properties
  * 2. Add 'WEBHOOK_URL' -> https://your-app-name.koyeb.app (NO trailing slash)
  * 3. Add 'WEBHOOK_SECRET' -> Your webhook secret from Koyeb env
- * 4. Save script properties
- * 5. Run the 'setupTrigger' function once manually to enable auto-sync
+ * 4. Add 'TELEGRAM_ID' -> Your Telegram user ID (number)
+ * 5. Save script properties
+ * 6. Run the 'setupTrigger' function once manually to enable auto-sync
  * ------------------------------------------------------------------
  */
 
@@ -22,77 +23,88 @@ function setupTrigger() {
     ScriptApp.deleteTrigger(triggers[i]);
   }
   
-  // Create new ON CHANGE trigger (Covers edits, row insertions, etc.)
-  ScriptApp.newTrigger('onSheetChange')
+  // Create new ON EDIT trigger (faster for cell-level edits)
+  ScriptApp.newTrigger('onSheetEdit')
       .forSpreadsheet(SpreadsheetApp.getActive())
-      .onChange()
+      .onEdit()
       .create();
       
-  // Also needed? onEdit is faster for single cell edits, but onChange handles rows better.
-  // Let's stick to onChange to be safe.
-      
-  Logger.log("✅ Trigger 'onSheetChange' created successfully.");
+  Logger.log("✅ Trigger 'onSheetEdit' created successfully.");
 }
 
-function onSheetChange(e) {
+function onSheetEdit(e) {
+  // Must have event object (installable trigger)
+  if (!e) return;
+
   const props = PropertiesService.getScriptProperties();
   const WEBHOOK_URL = props.getProperty("WEBHOOK_URL");
   const WEBHOOK_SECRET = props.getProperty("WEBHOOK_SECRET");
+  const TELEGRAM_ID = props.getProperty("TELEGRAM_ID");
 
   if (!WEBHOOK_URL || !WEBHOOK_SECRET) {
     Logger.log("❌ ERROR: Missing Script Properties. Please set WEBHOOK_URL and WEBHOOK_SECRET in Project Settings.");
     return;
   }
 
-  const sheet = SpreadsheetApp.getActiveSheet();
-  
-  // 1. Validate Sheet Name
-  if (sheet.getName() !== "Transactions") {
-    // Ignore changes in other sheets
+  if (!TELEGRAM_ID) {
+    Logger.log("❌ ERROR: Missing TELEGRAM_ID in Script Properties.");
     return;
   }
 
-  // 2. Identify the Active Row
-  // 'e' object doesn't give row on INSERT_ROW events reliably, so we use ActiveRange
-  const activeRange = sheet.getActiveRange();
-  if (!activeRange) return;
+  const sheet = e.source.getActiveSheet();
   
-  const row = activeRange.getRow();
+  // 1. Validate Sheet Name
+  if (sheet.getName() !== "Transactions") {
+    return;
+  }
+
+  // 2. Get the edited row
+  const row = e.range.getRow();
   
   // Skip Header Row (Row 1)
   if (row <= 1) return;
 
   // 3. Get Data from Row
-  // Assuming Columns A-G: [ID, Items, Harga, Toko, Metode, Tanggal, Type]
+  // Columns A-G: [Transaction ID, Items, Harga, Toko, Metode, Tanggal, Type]
   const lastCol = 7; // Column G
   const range = sheet.getRange(row, 1, 1, lastCol);
-  const values = range.getValues()[0]; // Array of values
+  const values = range.getValues()[0];
 
-  const transactionId = values[0];
+  let transactionId = values[0];
   
-  // If no ID, we can't sync
+  // If no Transaction ID exists, generate one (for manually added rows)
   if (!transactionId || String(transactionId).trim() === "") {
-     Logger.log(`⚠️ Skpping sync: No Transaction ID in Row ${row}`);
-     return;
+    transactionId = Utilities.getUuid();
+    sheet.getRange(row, 1).setValue(transactionId);
   }
 
-  // 4. Construct Payload
+  // 4. Format tanggal as ISO string
+  let tanggal = values[5];
+  if (tanggal instanceof Date) {
+    tanggal = Utilities.formatDate(tanggal, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss");
+  } else {
+    tanggal = String(tanggal || "");
+  }
+
+  // 5. Construct Payload (includes telegramId for new row inserts)
   const payload = {
+    "telegramId": parseInt(TELEGRAM_ID),
+    "sheetRowId": String(row),
     "transactionId": String(transactionId),
     "items": String(values[1] || ""),
     "harga": Number(values[2] || 0),
     "namaToko": String(values[3] || ""),
     "metodePembayaran": String(values[4] || ""),
-    "tanggal": String(values[5] || ""), // Apps Script usually returns Date object or string
+    "tanggal": tanggal,
     "type": String(values[6] || "expense")
   };
 
-  // 5. Send Webhook
+  // 6. Send Webhook
   const options = {
     'method' : 'post',
     'contentType': 'application/json',
     'headers': {
-      'x-webhook-secret': String(WEBHOOK_SECRET) // Force string to avoid "Header:null" error
+      'x-webhook-secret': String(WEBHOOK_SECRET)
     },
     'payload' : JSON.stringify(payload),
     'muteHttpExceptions': true

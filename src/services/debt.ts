@@ -2,6 +2,7 @@ import { db } from '../db/client';
 import { debts, transactions } from '../db/schema';
 import { getOrCreateUser } from './user';
 import { getUserBalance, deductBalance } from './balance';
+import { syncSingleToSheets } from './sheets';
 import { eq, and } from 'drizzle-orm';
 import { logger } from '../utils/logger';
 
@@ -59,6 +60,16 @@ export async function createDebt(
             type: 'debt',
             tanggal: new Date(),
             syncedToSheets: false
+        });
+
+        // Sync to Google Sheets
+        await syncSingleToSheets(telegramId, {
+            transactionId,
+            items: description,
+            harga: amount,
+            namaToko: merchant,
+            metodePembayaran: `Hutang - ${creditorName}`,
+            type: 'debt'
         });
 
         logger.info('Debt created', { debtId: debt.id, creditorName, amount });
@@ -157,6 +168,16 @@ export async function payDebt(telegramId: number, debtId: number, paymentMethod:
             type: 'expense',
             tanggal: new Date(),
             syncedToSheets: false
+        });
+
+        // Sync to Google Sheets
+        await syncSingleToSheets(telegramId, {
+            transactionId: paymentTransactionId,
+            items: `Bayar Hutang - ${debt.creditorName}: ${debt.description}`,
+            harga: debt.amount,
+            namaToko: debt.merchant,
+            metodePembayaran: paymentMethod,
+            type: 'expense'
         });
 
         // 3. Deduct balance

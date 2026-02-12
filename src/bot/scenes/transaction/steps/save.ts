@@ -1,6 +1,6 @@
 import { BotContext } from '../../../../types';
 import { Transaction } from '../../../../schemas/transaction';
-import { writeBatchTransaction } from '../../../../services/sheets';
+import { syncToSheets, SheetRow } from '../../../../services/sheets';
 import { formatCurrency } from '../../../../utils/currency';
 import { autoCategory, formatDate, titleCase } from '../../../../utils/format';
 import { logger } from '../../../../utils/logger';
@@ -10,7 +10,7 @@ import { transactions as transactionsTable, users } from '../../../../db/schema'
 import { eq } from 'drizzle-orm';
 
 /**
- * Saves transactions to Google Sheets and deducts balance.
+ * Saves transactions to Neon DB, syncs to Google Sheets, and deducts balance.
  * Returns the formatted success message.
  */
 export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string> => {
@@ -29,7 +29,6 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
         });
 
         if (!user) {
-            // Auto-register strictly if needed, but usually handled elsewhere
             logger.warn(`User ${telegramId} not found during save, creating default record.`);
             const [newUser] = await db.insert(users).values({
                 telegramId,
@@ -40,9 +39,6 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
         }
 
         // 1. Save to Database (Neon)
-        // Use Node's crypto for UUID or a simple library. 
-        // Assuming global crypto is available or we use uuid package if imported.
-        // Let's use current time + random suffix for transaction ID to be safe without extra deps here
         const batchId = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
         const now = new Date();
@@ -54,7 +50,7 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
             namaToko: t.namaToko || 'Unknown',
             metodePembayaran: t.metodePembayaran || 'Cash',
             tanggal: t.tanggal ? new Date(t.tanggal) : now,
-            type: 'expense',
+            type: 'expense' as const,
             syncedToSheets: false,
             createdAt: now
         }));
@@ -62,17 +58,21 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
         await db.insert(transactionsTable).values(records);
         logger.info(`Saved ${records.length} transactions to DB for user ${telegramId}`);
 
-        // 2. Save to Google Sheets
-        try {
-            await writeBatchTransaction(telegramId, transactions as Transaction[], batchId);
-            // Optionally update syncedToSheets flag here
-            // await db.update(transactionsTable).set({ syncedToSheets: true }).where(eq(transactionsTable.transactionId, batchId));
-        } catch (sheetError) {
-            logger.warn('Failed to sync to Google Sheets, saved locally only', { error: sheetError });
-        }
+        // 2. Sync to Google Sheets (non-blocking — errors are caught inside)
+        const sheetRows: SheetRow[] = transactions.map(t => ({
+            transactionId: batchId,
+            items: t.items || 'Unknown',
+            harga: t.harga || 0,
+            namaToko: t.namaToko || 'Unknown',
+            metodePembayaran: t.metodePembayaran || 'Cash',
+            tanggal: t.tanggal ? new Date(t.tanggal).toISOString() : now.toISOString(),
+            type: 'expense' as const
+        }));
+
+        // Fire-and-forget but awaited for inline flow; errors are handled internally.
+        await syncToSheets(telegramId, sheetRows, batchId);
 
         // 3. Deduct Balance
-        // Group totals by method (usually just one)
         const methodTotals = transactions.reduce((acc, t) => {
             const m = t.metodePembayaran || 'General';
             acc[m] = (acc[m] || 0) + (t.harga || 0);
@@ -83,9 +83,8 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
         const first = transactions[0];
 
         for (const [method, amount] of Object.entries(methodTotals)) {
-            if (method !== 'General') { // detailed methods only
+            if (method !== 'General') {
                 const result = await deductBalance(telegramId, method, amount);
-                // Store remaining balance for display
                 if (method === first.metodePembayaran) {
                     remainingBalance = result.newBalance;
                 }
@@ -112,19 +111,7 @@ export const saveAndFormatTransaction = async (ctx: BotContext): Promise<string>
             ? `\n📉 Sisa Saldo (${first.metodePembayaran}): ${formatCurrency(remainingBalance)}`
             : '';
 
-        // Add visual indicator if Sheets sync worked or failed (optional)
-        // For now, keep it simple. If DB save works, it's a success.
-
-        const successMessage = `✅ Tercatat:
-
-📅 Tanggal Beli: ${purchaseDateStr}
-🕒 Tanggal Catat: ${recordDateStr}
-🏪 Toko: ${titleCase(first.namaToko) || "-"}
-💳 Metode Pembayaran: ${titleCase(first.metodePembayaran) || "-"}${remainingStr}
-💰 Total Belanja: ${priceStr}
-
-Items:
-${itemsList}`;
+        const successMessage = `✅ Tercatat:\n\n📅 Tanggal Beli: ${purchaseDateStr}\n🕒 Tanggal Catat: ${recordDateStr}\n🏪 Toko: ${titleCase(first.namaToko) || "-"}\n💳 Metode Pembayaran: ${titleCase(first.metodePembayaran) || "-"}${remainingStr}\n💰 Total Belanja: ${priceStr}\n\nItems:\n${itemsList}`;
 
         return successMessage;
 

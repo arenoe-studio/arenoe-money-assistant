@@ -21,7 +21,7 @@ export async function parseMessage(message: string, paymentMethods?: string[]): 
       namaToko: res.namaToko || undefined,
       metodePembayaran: res.metodePembayaran as any || undefined,
       kategori: res.kategori || undefined,
-      tanggal: undefined
+      tanggal: res.tanggal ? new Date(res.tanggal) : undefined // Parse tanggal dari AI
     }));
 
     return transactions.map(removeNulls);

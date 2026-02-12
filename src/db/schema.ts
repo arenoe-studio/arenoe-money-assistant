@@ -22,14 +22,11 @@ export const transactions = pgTable('transactions', {
   tanggal: timestamp('tanggal').defaultNow(),
   type: text('type').notNull().default('expense'), // 'expense' | 'income' | 'transfer' | 'debt'
   syncedToSheets: boolean('synced_to_sheets').default(false),
-  sheetRowId: text('sheet_row_id'), // ID of the row in Google Sheets
+  sheetRowId: text('sheet_row_id'), // Row reference in Google Sheets (not unique — can be null)
   lastSyncAt: timestamp('last_sync_at'),
   createdAt: timestamp('created_at').defaultNow()
-}, (table) => {
-  return {
-    sheetRowIdIdx: uniqueIndex('sheet_row_id_idx').on(table.sheetRowId)
-  }
 });
+
 
 export const conversationState = pgTable('conversation_state', {
   id: serial('id').primaryKey(),

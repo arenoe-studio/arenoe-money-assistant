@@ -22,6 +22,13 @@
       "when": 1770821147840,
       "tag": "0002_graceful_dexter_bennett",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1770871844268,
+      "tag": "0003_giant_dark_phoenix",
+      "breakpoints": true
     }
   ]
 }

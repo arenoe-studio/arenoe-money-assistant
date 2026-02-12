@@ -55,11 +55,35 @@ Ensure the following files are in your repository root (Already created):
 3.  Open your bot in Telegram and send `/status`.
     - Should reply with "State: Idle".
 
-## 5. Troubleshooting
+## 5. Post-Deployment (Automatic)
+
+**Bot akan otomatis:**
+
+- ✅ Clear pending Telegram updates dari deployment sebelumnya
+- ✅ Reset webhook ke URL baru
+- ✅ Siap menerima pesan tanpa perlu manual intervention
+
+**Tidak perlu lagi:**
+
+- ❌ Manual reset webhook via BotFather
+- ❌ Manual clear pending updates
+
+Bot akan otomatis detect dan clear pending updates saat startup jika:
+
+1. Webhook URL berubah (redeploy dengan URL baru)
+2. Ada pending updates di webhook lama (ditunjukkan di logs)
+
+## 6. Troubleshooting
 
 - **Build Fails**: Check logs. Usually TypeScript errors (fixed in latest commit).
 - **Crash Loop**: Check `DATABASE_URL` connectivity or missing API keys.
-- **Bot Not Responding**: Ensure `start: npm run start` command is running in the container.
+- **Bot Not Responding**:
+  - Check logs untuk "Bot is online in WEBHOOK mode"
+  - Check logs untuk "✅ Bot webhook set to..." atau "✅ Pending updates cleared..."
+  - Jika ada error "Conflict: terminated by other getUpdates", bot sudah running di tempat lain
+- **Webhook Issues**: Bot akan auto-clear pending updates, tapi jika masih ada masalah:
+  - Check `WEBHOOK_DOMAIN` env var sudah benar
+  - Restart deployment di Koyeb dashboard
 
 ## 6. Google Sheets Integration
 

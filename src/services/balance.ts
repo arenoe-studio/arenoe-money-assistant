@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { paymentBalances } from '../db/schema';
 import { getOrCreateUser } from './user';
 import { formatCurrency } from '../utils/currency';
+import { syncSingleToSheets } from './sheets';
 import { eq, and } from 'drizzle-orm';
 
 /**
@@ -24,9 +25,9 @@ export async function setUserBalance(telegramId: number, method: string, amount:
             set: { amount: amount, updatedAt: new Date() }
         });
 
-    return { 
-        success: true, 
-        message: `✅ Saldo ${method} berhasil diatur menjadi ${formatCurrency(amount)}` 
+    return {
+        success: true,
+        message: `✅ Saldo ${method} berhasil diatur menjadi ${formatCurrency(amount)}`
     };
 }
 
@@ -35,7 +36,7 @@ export async function setUserBalance(telegramId: number, method: string, amount:
  */
 export async function getUserBalance(telegramId: number, method: string) {
     const user = await getOrCreateUser(telegramId);
-    
+
     const result = await db.select()
         .from(paymentBalances)
         .where(and(
@@ -43,7 +44,7 @@ export async function getUserBalance(telegramId: number, method: string) {
             eq(paymentBalances.method, method)
         ))
         .limit(1);
-        
+
     return result[0]?.amount || 0;
 }
 
@@ -52,7 +53,7 @@ export async function getUserBalance(telegramId: number, method: string) {
  */
 export async function getAllUserBalances(telegramId: number) {
     const user = await getOrCreateUser(telegramId);
-    
+
     // Get all user payment methods first
     // Use dynamic import to avoid potential circular dependency if any future changes occur, though safe now.
     const { getUserPaymentMethods } = await import('./payment');
@@ -80,11 +81,11 @@ export async function getAllUserBalances(telegramId: number) {
  */
 export async function deductBalance(telegramId: number, method: string, amount: number) {
     const user = await getOrCreateUser(telegramId);
-    
+
     // Get current balance
     const current = await getUserBalance(telegramId, method);
     const newBalance = current - amount;
-    
+
     // Update balance
     await db.insert(paymentBalances)
         .values({
@@ -111,11 +112,11 @@ export async function deductBalance(telegramId: number, method: string, amount: 
  */
 export async function addBalance(telegramId: number, method: string, amount: number) {
     const user = await getOrCreateUser(telegramId);
-    
+
     // Get current balance
     const current = await getUserBalance(telegramId, method);
     const newBalance = current + amount;
-    
+
     // Update balance
     await db.insert(paymentBalances)
         .values({
@@ -157,10 +158,12 @@ export async function transferBalance(userId: number, source: string, dest: stri
     // User Guide says: "Transfer saldo antar metode".
     // If I record "Expense" for source, and "Income" for dest, it messes up total expense/income reports?
     // Better to use type 'transfer'.
-    
+
+    const txId = crypto.randomUUID();
+
     await db.insert(transactions).values({
         userId: user.id,
-        transactionId: crypto.randomUUID(),
+        transactionId: txId,
         items: `Transfer ke ${dest}`,
         harga: totalDeduct, // Total cost to user
         namaToko: 'Transfer',
@@ -169,7 +172,17 @@ export async function transferBalance(userId: number, source: string, dest: stri
         tanggal: new Date(),
         syncedToSheets: false
     });
-    
+
+    // Sync to Google Sheets
+    await syncSingleToSheets(userId, {
+        transactionId: txId,
+        items: `Transfer ke ${dest}`,
+        harga: totalDeduct,
+        namaToko: 'Transfer',
+        metodePembayaran: source,
+        type: 'transfer'
+    });
+
     // Optional: Record incoming side? 
     // If type 'transfer' is excluded from Expense Reports, then `harga: totalDeduct` is just money moving.
     // But Admin Fee IS an expense.
@@ -180,7 +193,7 @@ export async function transferBalance(userId: number, source: string, dest: stri
     // 1. Expense: Admin Fee (type: expense).
     // 2. Transfer: Amount (type: transfer_out).
     // 3. Transfer: Amount (type: transfer_in).
-    
+
     // For simplicity in this bot:
     // User just wants to move balance.
     // I will record type 'transfer'.
@@ -208,8 +221,8 @@ export async function transferBalance(userId: number, source: string, dest: stri
  */
 export async function resetUserBalances(telegramId: number) {
     const user = await getOrCreateUser(telegramId);
-    
+
     await db.delete(paymentBalances).where(eq(paymentBalances.userId, user.id));
-    
+
     return { success: true };
 }

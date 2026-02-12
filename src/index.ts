@@ -60,7 +60,10 @@ async function main() {
                     res.end(JSON.stringify({ success: true }));
                 } catch (error: any) {
                     logger.error('Webhook Error', { error: error.message });
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    const statusCode = error.message?.includes('Unauthorized') ? 401
+                        : error.message?.includes('Invalid payload') ? 400
+                            : 500;
+                    res.writeHead(statusCode, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: error.message }));
                 }
                 return;
@@ -167,15 +170,35 @@ async function main() {
                     // Production: Webhook Mode
                     const webhookUrl = `${WEBHOOK_DOMAIN}${WEBHOOK_PATH}`;
 
-                    // Check current webhook status to avoid redundant updates (and errors)
+                    // Check current webhook status
                     const webhookInfo = await bot.telegram.getWebhookInfo();
 
                     if (webhookInfo.url !== webhookUrl) {
-                        logger.info(`Updating webhook URL from ${webhookInfo.url || 'none'} to ${webhookUrl}`);
+                        logger.info(`Webhook URL mismatch. Current: ${webhookInfo.url || 'none'}, Target: ${webhookUrl}`);
+
+                        // IMPORTANT: Delete old webhook and drop pending updates
+                        // This prevents issues with pending updates from old deployments
+                        logger.info('Deleting old webhook and clearing pending updates...');
+                        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+
+                        // Wait a bit for Telegram to process the deletion
+                        await new Promise(res => setTimeout(res, 1000));
+
+                        // Set new webhook
+                        logger.info(`Setting new webhook to ${webhookUrl}...`);
                         await bot.telegram.setWebhook(webhookUrl);
-                        logger.info(`Bot webhook set to ${webhookUrl}`);
+                        logger.info(`✅ Bot webhook set to ${webhookUrl}`);
                     } else {
-                        logger.info(`Webhook already correctly set to ${webhookUrl}. Skipping update.`);
+                        logger.info(`Webhook already correctly set to ${webhookUrl}.`);
+
+                        // Even if URL is same, check for pending updates
+                        if (webhookInfo.pending_update_count && webhookInfo.pending_update_count > 0) {
+                            logger.warn(`Found ${webhookInfo.pending_update_count} pending updates. Clearing...`);
+                            await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                            await new Promise(res => setTimeout(res, 1000));
+                            await bot.telegram.setWebhook(webhookUrl);
+                            logger.info('✅ Pending updates cleared and webhook reset.');
+                        }
                     }
 
                     logger.info('Bot is online in WEBHOOK mode');

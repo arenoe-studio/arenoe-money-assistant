@@ -7,6 +7,7 @@ import { addBalance } from '../../../services/balance';
 import { parseCurrency, formatCurrency } from '../../../utils/currency';
 import { titleCase } from '../../../utils/format';
 import { getPaymentMenu } from '../../../utils/keyboard';
+import { parseIncomeMessage } from '../../../services/income-parser';
 
 export const INCOME_SCENE_ID = 'income_wizard';
 
@@ -72,7 +73,7 @@ const step1_processMethod = async (ctx: BotContext) => {
             await ctx.answerCbQuery();
 
             await ctx.editMessageText(
-                `✅ Metode: ${method}\n\nMasukkan keterangan dan nominal income (Contoh: "Gaji 10jt" atau "Bonus 500rb"):`
+                `✅ Metode: ${method}\n\n📝 Masukkan keterangan dan nominal income.\n\nContoh:\n• "Gaji 5jt"\n• "Bonus 500rb"\n• "2 februari 2026 dapat uang freelance 2jt"`
             );
             return ctx.wizard.next();
         }
@@ -94,54 +95,30 @@ const step2_processInput = async (ctx: BotContext) => {
     }
 
     try {
-        const amount = parseCurrency(text);
+        // Use AI parser for better extraction
+        const parsed = await parseIncomeMessage(text);
 
-        if (!amount || amount <= 0) {
+        if (!parsed.amount || parsed.amount <= 0) {
             await ctx.reply('⚠️ Nominal tidak ditemukan atau tidak valid. Pastikan menulis angka (contoh: 5jt, 50000).');
             return;
         }
 
-
-        // Strategy: Strip all detected currency parts from the user input.
-        // If the remaining string is empty or trivial, assume user only entered nominal.
-        let description = text;
-        const currencyRegex = /(\d+(?:[.,]\d+)?)\s*(jt|juta|m|mn|rb|ribu|k|kb|ratus|rat|rp|rupiah)?/gi;
-        description = description.replace(currencyRegex, '').replace(/\s+/g, ' ').trim();
-
-        // Remove isolated currency words if they were left over (e.g. "rupiah")
-        // description = description.replace(/\b(rupiah|rp)\b/gi, '').trim();
-
-        if (!description || description.length < 2) {
-            (ctx.wizard.state as any).amount = amount;
-            await ctx.reply('📝 Masukkan keterangan untuk income ini:');
-            return ctx.wizard.next();
-        }
-
-        (ctx.wizard.state as any).amount = amount;
-        (ctx.wizard.state as any).description = description;
+        (ctx.wizard.state as any).amount = parsed.amount;
+        (ctx.wizard.state as any).description = parsed.description || 'Income';
+        (ctx.wizard.state as any).tanggal = parsed.tanggal; // ISO string or null
 
         return step3_finalize(ctx);
 
     } catch (error) {
         logger.error('Income Process Error', { error });
-        await ctx.reply('❌ Gagal mencatat income.');
-        return ctx.scene.leave();
+        await ctx.reply('❌ Gagal memproses input. Coba lagi dengan format: "Gaji 5jt" atau "Bonus 500rb"');
+        return;
     }
 };
 
 const step3_finalize = async (ctx: BotContext) => {
-    // If we came from step 2 via next(), description is in message
-    if (!ctx.wizard.state.description) {
-        const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
-        if (!text) {
-            await ctx.reply('⚠️ Harap kirim teks keterangan.');
-            return;
-        }
-        (ctx.wizard.state as any).description = text;
-    }
-
     const state = ctx.wizard.state as any;
-    const { amount, description, method } = state;
+    const { amount, description, method, tanggal } = state;
 
     try {
         // 1. Add Balance
@@ -151,25 +128,46 @@ const step3_finalize = async (ctx: BotContext) => {
         const { db } = await import('../../../db/client');
         const { transactions: transactionTable } = await import('../../../db/schema');
         const { getOrCreateUser } = await import('../../../services/user');
+        const { syncSingleToSheets } = await import('../../../services/sheets');
 
         const user = await getOrCreateUser(ctx.from!.id);
+        const txId = crypto.randomUUID();
+
+        // Parse tanggal if provided
+        const transactionDate = tanggal ? new Date(tanggal) : new Date();
 
         await db.insert(transactionTable).values({
             userId: user.id,
-            transactionId: crypto.randomUUID(),
+            transactionId: txId,
             items: description,
             harga: amount,
             namaToko: 'Income',
             metodePembayaran: method,
             type: 'income',
-            tanggal: new Date(),
+            tanggal: transactionDate,
             syncedToSheets: false
         });
+
+        // 3. Sync to Google Sheets
+        await syncSingleToSheets(ctx.from!.id, {
+            transactionId: txId,
+            items: description,
+            harga: amount,
+            namaToko: 'Income',
+            metodePembayaran: method,
+            tanggal: transactionDate.toISOString(),
+            type: 'income'
+        });
+
+        // Format tanggal untuk display
+        const dateDisplay = tanggal
+            ? `\n📅 Tanggal: ${new Date(tanggal).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`
+            : '';
 
         await ctx.reply(
             `✅ Income Tercatat:\n\n` +
             `📝 Keterangan: ${description}\n` +
-            `💰 Nominal: ${formatCurrency(amount)}\n` +
+            `💰 Nominal: ${formatCurrency(amount)}${dateDisplay}\n` +
             `💳 Metode: ${method}\n` +
             `📈 Saldo Baru: ${formatCurrency(result.newBalance)}`
         );
