@@ -46,12 +46,17 @@ export function formatDate(date: Date | undefined, includeTime: boolean = false)
 
 /**
  * Parse date string from AI Vision/Parser as WIB timezone
- * AI returns strings like "2026-02-12 15:46" which should be treated as WIB, not UTC
+ * AI returns strings like "2026-02-12 15:46" or "2026-02-12" which should be treated as WIB, not UTC
  * Without this, new Date() treats it as UTC and adds 7 hours when displaying in WIB
  */
 export function parseDateAsWIB(dateString: string): Date {
-  // Parse the string explicitly in Asia/Jakarta timezone
-  const dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd HH:mm', { zone: 'Asia/Jakarta' });
+  // Try date-time format first (YYYY-MM-DD HH:mm)
+  let dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd HH:mm', { zone: 'Asia/Jakarta' });
+
+  if (!dt.isValid) {
+    // Try date-only format (YYYY-MM-DD) - will set time to 00:00
+    dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd', { zone: 'Asia/Jakarta' });
+  }
 
   if (!dt.isValid) {
     // Fallback: try ISO format

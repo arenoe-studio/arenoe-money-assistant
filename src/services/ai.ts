@@ -77,8 +77,8 @@ ATURAN UTAMA (ANTI-HALUSINASI):
      * "tgl 5" -> tahun/bulan sekarang, tanggal 5
      * "Jumat lalu" -> hitung dari CURRENT_DATE
      * "3 hari yang lalu" -> hitung dari CURRENT_DATE
-   - Format output: **YYYY-MM-DD** (TANPA JAM/WAKTU)
-   - **JANGAN** tambahkan jam (HH:mm:ss) kecuali user secara eksplisit menulis jam
+   - Format output: **YYYY-MM-DD** (jika tanpa waktu) atau **YYYY-MM-DD HH:mm** (jika user menyebut waktu eksplisit seperti "jam 22:00")
+   - Contoh: "kemarin jam 22:00" -\u003e "[YESTERDAY_DATE] 22:00", "kemarin" -\u003e "[YESTERDAY_DATE]"
    - **PRIORITAS**: Jika ada tanggal di awal pesan (misal "2 februari 2026 pentol 14k"), PASTI ekstrak tanggalnya.
 7. **Metode Pembayaran**:
    - Ekstrak jika user menyebut "pakai OVO", "via BCA", "cash", "gopay", "dana", dll.

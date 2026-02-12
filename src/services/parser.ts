@@ -2,6 +2,7 @@ import { Transaction, PartialTransaction } from '../schemas/transaction';
 import { extractTransaction } from './ai';
 import { parseCurrency } from '../utils/currency';
 import { logger } from '../utils/logger';
+import { parseDateAsWIB } from '../utils/format';
 
 /**
  * Parse a message using AI only (regex removed as per request)
@@ -15,14 +16,37 @@ export async function parseMessage(message: string, paymentMethods?: string[]): 
     logger.info('AI parsing result', { result: aiResults });
 
     // Map results to PartialTransaction
-    const transactions: PartialTransaction[] = aiResults.map(res => ({
-      items: res.items || undefined,
-      harga: res.harga || undefined,
-      namaToko: res.namaToko || undefined,
-      metodePembayaran: res.metodePembayaran as any || undefined,
-      kategori: res.kategori || undefined,
-      tanggal: res.tanggal ? new Date(res.tanggal) : undefined // Parse tanggal dari AI
-    }));
+    const transactions: PartialTransaction[] = aiResults.map(res => {
+      let parsedDate: Date | undefined = undefined;
+
+      // Parse tanggal from AI with proper timezone handling
+      if (res.tanggal) {
+        logger.info('Text Parser: Date from AI', {
+          rawTanggal: res.tanggal,
+          type: typeof res.tanggal
+        });
+
+        if (typeof res.tanggal === 'string') {
+          parsedDate = parseDateAsWIB(res.tanggal);
+        } else {
+          parsedDate = res.tanggal;
+        }
+
+        logger.info('Text Parser: Date parsed', {
+          dateObject: parsedDate.toISOString(),
+          localString: parsedDate.toString()
+        });
+      }
+
+      return {
+        items: res.items || undefined,
+        harga: res.harga || undefined,
+        namaToko: res.namaToko || undefined,
+        metodePembayaran: res.metodePembayaran as any || undefined,
+        kategori: res.kategori || undefined,
+        tanggal: parsedDate
+      };
+    });
 
     return transactions.map(removeNulls);
 
