@@ -11,7 +11,7 @@ RULES:
 1. **OUTPUT**: Return RAW JSON only. NO MARKDOWN (no \`\`\`json). NO PROLOGUE/EPILOGUE.
 2. **ITEMS**: Extract main line items. Ignore tax, subtotal, change, cashback.
 3. **PRICE**: Use exact numbers visible.
-4. **DATE**: Extract date/time if printed. Format: YYYY-MM-DD HH:mm (or null).
+4. **DATE**: Extract date/time if printed. Format: YYYY-MM-DD HH:mm (or null). DO NOT CONVERT TIMEZONES. Use exact time shown.
 5. **MERCHANT**: Extract merchant name from header/logo.
 6. **PAYMENT**: Detect payment method (Cash/Card/QRIS) if shown.
 7. **CATEGORY**: Infer category based on item name.
@@ -55,7 +55,7 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
         ];
 
         // Use standard GPT 5 mini
-        const parsedResponse = await openRouterChatCompletion(messages, 'google/gemini-2.5-flash');
+        const parsedResponse = await openRouterChatCompletion(messages, 'google/gemini-3-flash-preview');
 
         const content = (parsedResponse as any).choices?.[0]?.message?.content;
 
