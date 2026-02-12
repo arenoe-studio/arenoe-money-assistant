@@ -16,14 +16,15 @@ ATURAN:
    - "15k" -> 15000
    - "1.5jt" -> 1500000
    - Jika tidak ada nominal, return \`null\`.
-4. **Tanggal**:
+4. **Tanggal** (PENTING):
    - Default: \`null\` (backend akan gunakan hari ini)
    - Ekstrak HANYA jika user menyebut tanggal eksplisit:
      * "2 februari 2026" -> "2026-02-02"
      * "kemarin" -> hitung dari hari ini
      * "tgl 5" -> tahun/bulan sekarang, tanggal 5
      * "Jumat lalu" -> hitung dari hari ini
-   - Format output: YYYY-MM-DD
+   - Format output: **YYYY-MM-DD** (TANPA JAM/WAKTU)
+   - **JANGAN** tambahkan jam (HH:mm:ss) kecuali user secara eksplisit menulis jam
 
 OUTPUT FORMAT (JSON ONLY):
 {
