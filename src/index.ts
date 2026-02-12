@@ -41,12 +41,24 @@ async function main() {
 
             // Webhook Endpoint for Google Sheets Sync
             if (req.url === '/webhook/sheets-sync' && req.method === 'POST') {
+                logger.info('Sheets Sync: Webhook endpoint called', {
+                    method: req.method,
+                    url: req.url,
+                    headers: req.headers
+                });
+
                 try {
                     const buffers = [];
                     for await (const chunk of req) {
                         buffers.push(chunk);
                     }
                     const data = Buffer.concat(buffers).toString();
+
+                    logger.info('Sheets Sync: Payload received', {
+                        dataLength: data.length,
+                        preview: data.substring(0, 200)
+                    });
+
                     const payload = JSON.parse(data);
 
                     const secret = req.headers['x-webhook-secret'] as string;
@@ -56,10 +68,11 @@ async function main() {
 
                     await processSyncFromSheets(secret, payload);
 
+                    logger.info('Sheets Sync: Successfully processed');
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ success: true }));
                 } catch (error: any) {
-                    logger.error('Webhook Error', { error: error.message });
+                    logger.error('Webhook Error', { error: error.message, stack: error.stack });
                     const statusCode = error.message?.includes('Unauthorized') ? 401
                         : error.message?.includes('Invalid payload') ? 400
                             : 500;

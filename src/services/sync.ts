@@ -30,17 +30,33 @@ export interface SheetTransactionPayload {
 export async function processSyncFromSheets(secret: string, payload: SheetTransactionPayload) {
     // ── 0. Validate webhook secret ──────────────────────────────────────
     const expectedSecret = process.env.WEBHOOK_SECRET;
+
+    logger.info('Sync: Webhook received', {
+        hasSecret: !!secret,
+        hasExpectedSecret: !!expectedSecret,
+        transactionId: payload.transactionId,
+        telegramId: payload.telegramId
+    });
+
     if (expectedSecret && secret !== expectedSecret) {
-        logger.warn('Sync: Invalid webhook secret received.');
+        logger.warn('Sync: Invalid webhook secret received.', {
+            receivedLength: secret?.length,
+            expectedLength: expectedSecret?.length
+        });
         throw new ApplicationError('Unauthorized: invalid webhook secret');
     }
 
     // ── 1. Validate payload ─────────────────────────────────────────────
     if (!payload.transactionId) {
+        logger.error('Sync: Invalid payload - missing transactionId', { payload });
         throw new ApplicationError('Invalid payload: Missing transactionId');
     }
 
-    logger.info(`Sync: Processing webhook for transaction ${payload.transactionId}`);
+    logger.info(`Sync: Processing webhook for transaction ${payload.transactionId}`, {
+        type: payload.type,
+        items: payload.items,
+        harga: payload.harga
+    });
 
     // ── 2. Check for existing transaction ──────────────────────────────
     const existingTx = await db.query.transactions.findFirst({
