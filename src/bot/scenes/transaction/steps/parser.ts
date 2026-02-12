@@ -6,6 +6,7 @@ import { logger } from '../../../../utils/logger';
 import { getMissingFields } from '../constants';
 import { analyzeReceipt } from '../../../../services/vision';
 import { getFileUrl } from '../../../../utils/telegram';
+import { parseDateAsWIB } from '../../../../utils/format';
 
 export const step1_parse = async (ctx: BotContext) => {
     if (!ctx.session) ctx.session = {} as any;
@@ -87,9 +88,26 @@ export const step1_parse = async (ctx: BotContext) => {
                 kategori: t.kategori
             };
 
+
             // Parse date or use today
             if (t.tanggal) {
-                base.tanggal = new Date(t.tanggal);
+                logger.info('Parser: Date conversion', {
+                    rawTanggal: t.tanggal,
+                    type: typeof t.tanggal
+                });
+
+                // Fix timezone issue: parse as WIB instead of UTC
+                if (typeof t.tanggal === 'string') {
+                    base.tanggal = parseDateAsWIB(t.tanggal);
+                } else {
+                    // If already a Date object, use as-is
+                    base.tanggal = t.tanggal;
+                }
+
+                logger.info('Parser: Date converted', {
+                    dateObject: base.tanggal.toISOString(),
+                    localString: base.tanggal.toString()
+                });
                 (base as any)._tanggalSpecified = true;
             } else {
                 base.tanggal = new Date();

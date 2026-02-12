@@ -64,10 +64,23 @@ export async function analyzeReceipt(imageUrl: string, paymentMethods?: string[]
             throw new ApplicationError('Empty response from AI vision provider');
         }
 
+        // Log raw AI response for debugging
+        logger.info('Vision Service: Raw AI Response', {
+            rawContent: content,
+            contentLength: content.length
+        });
+
         try {
             // Cleanup potential markdown backticks
             const cleanContent = content.replace(/```json/g, '').replace(/```/g, '').trim();
+
+            // Log cleaned content
+            logger.info('Vision Service: Cleaned Content', { cleanContent });
+
             const parsed = JSON.parse(cleanContent);
+
+            // Log parsed JSON
+            logger.info('Vision Service: Parsed JSON', { parsed: JSON.stringify(parsed, null, 2) });
 
             let result: ExtractionResult[] = [];
             if (parsed.transactions && Array.isArray(parsed.transactions)) {
