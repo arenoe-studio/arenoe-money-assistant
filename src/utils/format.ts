@@ -67,9 +67,25 @@ export function parseDateAsWIB(dateString: string): Date {
   let dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd HH:mm', { zone: 'Asia/Jakarta' });
 
   if (!dt.isValid) {
-    // Try date-only format (YYYY-MM-DD) - will set time to 00:00
-    dt = DateTime.fromFormat(dateString, 'yyyy-MM-dd', { zone: 'Asia/Jakarta' });
-    console.log('[parseDateAsWIB] Parsed as date-only:', dt.toISO(), 'Zone:', dt.zoneName);
+    // Try date-only format (YYYY-MM-DD)
+    // IMPORTANT: For date-only, we use the current time to avoid timezone shift issues
+    // If we set to 00:00 WIB, it becomes previous day 17:00 UTC
+    const dateOnly = DateTime.fromFormat(dateString, 'yyyy-MM-dd', { zone: 'Asia/Jakarta' });
+
+    if (dateOnly.isValid) {
+      // Get current time in WIB
+      const now = DateTime.now().setZone('Asia/Jakarta');
+
+      // Combine the date from AI with current time
+      dt = dateOnly.set({
+        hour: now.hour,
+        minute: now.minute,
+        second: now.second,
+        millisecond: now.millisecond
+      });
+
+      console.log('[parseDateAsWIB] Parsed as date-only, using current time:', dt.toISO(), 'Zone:', dt.zoneName);
+    }
   } else {
     console.log('[parseDateAsWIB] Parsed as date-time:', dt.toISO(), 'Zone:', dt.zoneName);
   }
