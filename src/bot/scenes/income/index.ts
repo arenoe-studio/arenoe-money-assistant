@@ -6,20 +6,166 @@ import { getUserPaymentMethods } from '../../../services/payment';
 import { addBalance } from '../../../services/balance';
 import { parseCurrency, formatCurrency } from '../../../utils/currency';
 import { getPaymentMenu } from '../../../utils/keyboard';
+import { parseIncomeMessage } from '../../../services/income-parser';
+import { parseDateAsWIB } from '../../../utils/format';
 
 export const INCOME_SCENE_ID = 'income_wizard';
 
-const step0_askMethod = async (ctx: BotContext) => {
-    try {
-        const methods = await getUserPaymentMethods(ctx.from!.id);
-        const keyboard = getPaymentMenu('main', methods);
+/**
+ * INCOME WIZARD — Smart AI-Powered Flow
+ * 
+ * Flow:
+ * Step 0: Ask user to describe their income (free text)
+ * Step 1: AI parses the message → extract amount, description, date
+ *         Then ask for payment method (only thing we need interactively)
+ * Step 2: Process payment method selection → finalize
+ * 
+ * If AI can't extract amount/description, falls back to asking step by step.
+ */
 
-        await ctx.reply('💰 Untuk metode apa income ini?', keyboard);
+const step0_askInput = async (ctx: BotContext) => {
+    try {
+        await ctx.reply(
+            '💰 Catat Income Baru\n\n' +
+            'Tulis detail pemasukan kamu dalam satu pesan.\n\n' +
+            'Contoh:\n' +
+            '👉 "Gaji 5jt"\n' +
+            '👉 "Freelance 500k 6 februari 2026"\n' +
+            '👉 "Bonus proyek 2.5jt kemarin"\n\n' +
+            'Saya akan otomatis mendeteksi nominal, keterangan, dan tanggal.'
+        );
         return ctx.wizard.next();
     } catch (error) {
         logger.error('Income Scene Step 0 Error', { error });
-        await ctx.reply('Terjadi kesalahan memuat data.');
+        await ctx.reply('Terjadi kesalahan.');
         return ctx.scene.leave();
+    }
+};
+
+const step1_parseAndAskMethod = async (ctx: BotContext) => {
+    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
+
+    if (!text || text.trim().length === 0) {
+        await ctx.reply('⚠️ Mohon kirim pesan teks tentang income kamu.');
+        return;
+    }
+
+    let processingMsg;
+    try {
+        processingMsg = await ctx.reply('⏳ Memproses...');
+
+        // Parse with AI
+        const parsed = await parseIncomeMessage(text);
+
+        // Clean up processing message
+        if (processingMsg) {
+            try { await ctx.deleteMessage(processingMsg.message_id); } catch (e) { /* ignore */ }
+        }
+
+        const state = ctx.wizard.state as any;
+
+        // Store parsed data
+        state.description = parsed.description || null;
+        state.amount = parsed.amount || null;
+        state.tanggalStr = parsed.tanggal || null;
+
+        logger.info('Income AI Parse Result', {
+            input: text,
+            description: state.description,
+            amount: state.amount,
+            tanggal: state.tanggalStr
+        });
+
+        // Validate: We need at least amount
+        if (!state.amount) {
+            // Try local regex parsing as fallback
+            const localAmount = parseCurrency(text);
+            if (localAmount && localAmount > 0) {
+                state.amount = localAmount;
+                // If only amount found, use original text as description hint
+                if (!state.description) {
+                    state.description = null; // Will ask later
+                }
+            }
+        }
+
+        // If still no amount, ask manually
+        if (!state.amount) {
+            await ctx.reply(
+                '⚠️ Saya tidak bisa mendeteksi nominal dari pesan kamu.\n\n' +
+                '💰 Masukkan nominal income:\n' +
+                'Contoh: 500k, 5jt, 1500000'
+            );
+            // Go to manual amount step
+            ctx.wizard.selectStep(3); // step4_manualAmount
+            return;
+        }
+
+        // If no description, ask manually
+        if (!state.description) {
+            await ctx.reply(
+                `✅ Nominal: ${formatCurrency(state.amount)}\n\n` +
+                '📝 Masukkan keterangan income:\n' +
+                'Contoh: Gaji, Bonus, Freelance'
+            );
+            ctx.wizard.selectStep(4); // step5_manualDescription
+            return;
+        }
+
+        // Build confirmation summary
+        let summary = '🔍 Data terdeteksi:\n\n';
+        summary += `📝 Keterangan: ${state.description}\n`;
+        summary += `💰 Nominal: ${formatCurrency(state.amount)}\n`;
+
+        if (state.tanggalStr) {
+            const parsedDate = parseDateAsWIB(state.tanggalStr);
+            state.tanggal = parsedDate;
+            const dateDisplay = parsedDate.toLocaleDateString('id-ID', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+            });
+            summary += `📅 Tanggal: ${dateDisplay}\n`;
+        } else {
+            state.tanggal = new Date();
+            summary += `📅 Tanggal: Hari ini\n`;
+        }
+
+        summary += '\n💳 Pilih metode pembayaran:';
+
+        await ctx.reply(summary);
+
+        // Show payment method selection
+        const methods = await getUserPaymentMethods(ctx.from!.id);
+        const keyboard = getPaymentMenu('main', methods);
+        await ctx.reply('💳 Metode pembayaran:', keyboard);
+
+        return ctx.wizard.next(); // Go to step2_processMethod
+
+    } catch (error: any) {
+        if (processingMsg) {
+            try { await ctx.deleteMessage(processingMsg.message_id); } catch (e) { /* ignore */ }
+        }
+        logger.error('Income Parse Error', { error: error.message });
+
+        // Fallback: try simple currency parsing
+        const localAmount = parseCurrency(text);
+        if (localAmount && localAmount > 0) {
+            const state = ctx.wizard.state as any;
+            state.amount = localAmount;
+            state.description = null;
+
+            await ctx.reply(
+                `✅ Nominal: ${formatCurrency(localAmount)}\n\n` +
+                '📝 Masukkan keterangan income:\n' +
+                'Contoh: Gaji, Bonus, Freelance'
+            );
+            ctx.wizard.selectStep(4); // step5_manualDescription
+            return;
+        }
+
+        await ctx.reply('❌ Gagal memproses pesan. Coba lagi dengan format:\n"Gaji 5jt" atau "Freelance 500k"');
+        return;
     }
 };
 
@@ -38,7 +184,7 @@ const handleIncomeCategoryNav = async (ctx: BotContext) => {
             const methods = await getUserPaymentMethods(ctx.from!.id);
             const keyboard = getPaymentMenu(type as any, methods);
 
-            let message = '💰 Untuk metode apa income ini?';
+            let message = '💳 Metode pembayaran:';
             if (type === 'bank') message = '🏦 Pilih Bank:';
             if (type === 'ewallet') message = '📱 Pilih E-Wallet:';
 
@@ -54,7 +200,7 @@ const handleIncomeCategoryNav = async (ctx: BotContext) => {
     return 'NONE';
 };
 
-const step1_processMethod = async (ctx: BotContext) => {
+const step2_processMethod = async (ctx: BotContext) => {
     // First, check if it's category navigation
     const navResult = await handleIncomeCategoryNav(ctx);
     if (navResult === 'NAVIGATING') return; // Stay in step
@@ -68,50 +214,65 @@ const step1_processMethod = async (ctx: BotContext) => {
             (ctx.wizard.state as any).method = method;
             await ctx.answerCbQuery();
 
-            await ctx.editMessageText(
-                `✅ Metode: ${method}\n\n📝 Masukkan nominal income.\n\nContoh: 500k, 5jt, 1500000`
-            );
-            return ctx.wizard.next();
+            try {
+                await ctx.editMessageText(`✅ Metode: ${method}`);
+            } catch (e) { /* ignore */ }
+
+            // Finalize
+            return finalizeIncome(ctx);
         }
     }
 
     // Ignore text input
     if (ctx.message) {
-        await ctx.reply('⚠️ Mohon pilih metode menggunakan tombol.');
+        await ctx.reply('⚠️ Mohon pilih metode menggunakan tombol di atas.');
         return;
     }
 };
 
-const step2_processAmount = async (ctx: BotContext) => {
+/**
+ * Manual amount entry (fallback when AI can't detect amount)
+ */
+const step4_manualAmount = async (ctx: BotContext) => {
     const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
 
     if (!text) {
-        await ctx.reply('⚠️ Format salah. Kirim nominal (contoh: 500k)');
+        await ctx.reply('⚠️ Kirim nominal (contoh: 500k, 5jt)');
         return;
     }
 
-    try {
-        const amount = parseCurrency(text);
+    const amount = parseCurrency(text);
+    if (!amount || amount <= 0) {
+        await ctx.reply('⚠️ Nominal tidak valid. Coba lagi (contoh: 500k, 5jt, 1500000)');
+        return;
+    }
 
-        if (!amount || amount <= 0) {
-            await ctx.reply('⚠️ Nominal tidak valid atau harus lebih dari 0.');
-            return;
-        }
+    const state = ctx.wizard.state as any;
+    state.amount = amount;
 
-        (ctx.wizard.state as any).amount = amount;
-
+    if (!state.description) {
         await ctx.reply(
-            `✅ Nominal: ${formatCurrency(amount)}\n\n📝 Masukkan keterangan income.\n\nContoh: Gaji, Bonus, Freelance`
+            `✅ Nominal: ${formatCurrency(amount)}\n\n` +
+            '📝 Masukkan keterangan income:\n' +
+            'Contoh: Gaji, Bonus, Freelance'
         );
-        return ctx.wizard.next();
-
-    } catch (error) {
-        await ctx.reply('⚠️ Format nominal tidak valid. Coba lagi (contoh: 500k, 5jt)');
-        return;
+        return ctx.wizard.next(); // Go to step5_manualDescription
     }
+
+    // Have both amount and description, ask for date
+    await ctx.reply(
+        `✅ Nominal: ${formatCurrency(amount)}\n\n` +
+        '📅 Kapan income ini diterima?\n\n' +
+        'Kirim tanggal (contoh: "2 februari 2026", "kemarin") atau ketik "today" untuk hari ini.'
+    );
+    ctx.wizard.selectStep(5); // step6_manualDate
+    return;
 };
 
-const step3_processDescription = async (ctx: BotContext) => {
+/**
+ * Manual description entry  
+ */
+const step5_manualDescription = async (ctx: BotContext) => {
     const text = ctx.message && 'text' in ctx.message ? ctx.message.text : '';
 
     if (!text || text.trim().length === 0) {
@@ -119,49 +280,77 @@ const step3_processDescription = async (ctx: BotContext) => {
         return;
     }
 
-    (ctx.wizard.state as any).description = text.trim();
+    const state = ctx.wizard.state as any;
+    state.description = text.trim();
 
-    await ctx.reply(
-        `✅ Keterangan: ${text.trim()}\n\n📅 Kapan income ini diterima?\n\nKirim tanggal (contoh: "2 februari 2026", "kemarin") atau ketik "today" untuk hari ini.`
-    );
-    return ctx.wizard.next();
+    if (!state.tanggalStr && !state.tanggal) {
+        await ctx.reply(
+            `✅ Keterangan: ${text.trim()}\n\n` +
+            '📅 Kapan income ini diterima?\n\n' +
+            'Kirim tanggal (contoh: "2 februari 2026", "kemarin") atau ketik "today" untuk hari ini.'
+        );
+        return ctx.wizard.next(); // Go to step6_manualDate
+    }
+
+    // Have everything except method, ask method
+    const methods = await getUserPaymentMethods(ctx.from!.id);
+    const keyboard = getPaymentMenu('main', methods);
+    await ctx.reply(`✅ Keterangan: ${text.trim()}\n\n💳 Pilih metode pembayaran:`, keyboard);
+    // Jump to method step
+    ctx.wizard.selectStep(2); // step2_processMethod (index 2 in wizard)
+    return;
 };
 
-const step4_processDate = async (ctx: BotContext) => {
+/**
+ * Manual date entry
+ */
+const step6_manualDate = async (ctx: BotContext) => {
     const text = ctx.message && 'text' in ctx.message ? ctx.message.text?.trim().toLowerCase() : '';
 
     if (!text) {
-        await ctx.reply('⚠️ Format salah. Kirim tanggal atau "today".');
+        await ctx.reply('⚠️ Kirim tanggal atau ketik "today".');
         return;
     }
 
-    let tanggal: Date;
+    const state = ctx.wizard.state as any;
 
     if (text === 'today' || text === 'hari ini') {
-        tanggal = new Date();
+        state.tanggal = new Date();
     } else {
-        // Parse dengan AI untuk tanggal natural
+        // Parse date with AI
         try {
-            const { parseIncomeMessage } = await import('../../../services/income-parser');
             const parsed = await parseIncomeMessage(text);
-
             if (parsed.tanggal) {
-                tanggal = new Date(parsed.tanggal);
+                state.tanggal = parseDateAsWIB(parsed.tanggal);
             } else {
-                tanggal = new Date(); // Fallback ke today
+                state.tanggal = new Date();
             }
         } catch (error) {
-            logger.warn('Failed to parse date with AI, using today', { error });
-            tanggal = new Date();
+            logger.warn('Failed to parse date, using today', { error });
+            state.tanggal = new Date();
         }
     }
 
-    (ctx.wizard.state as any).tanggal = tanggal;
+    const dateDisplay = state.tanggal.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
 
-    return step5_finalize(ctx);
+    // Ask for payment method
+    const methods = await getUserPaymentMethods(ctx.from!.id);
+    const keyboard = getPaymentMenu('main', methods);
+    await ctx.reply(`✅ Tanggal: ${dateDisplay}\n\n💳 Pilih metode pembayaran:`, keyboard);
+
+    // Jump to method step
+    ctx.wizard.selectStep(2);
+    return;
 };
 
-const step5_finalize = async (ctx: BotContext) => {
+/**
+ * Finalize and save income
+ */
+const finalizeIncome = async (ctx: BotContext) => {
     const state = ctx.wizard.state as any;
     const { amount, description, method, tanggal } = state;
 
@@ -192,8 +381,8 @@ const step5_finalize = async (ctx: BotContext) => {
             syncedToSheets: false
         });
 
-        // 3. Sync to Google Sheets (tanggal as YYYY-MM-DD only, no time)
-        const dateOnly = transactionDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        // 3. Sync to Google Sheets
+        const dateOnly = transactionDate.toISOString().split('T')[0];
 
         await syncSingleToSheets(ctx.from!.id, {
             transactionId: txId,
@@ -230,10 +419,10 @@ const step5_finalize = async (ctx: BotContext) => {
 
 export const incomeScene = new Scenes.WizardScene<BotContext>(
     INCOME_SCENE_ID,
-    step0_askMethod,
-    step1_processMethod,
-    step2_processAmount,
-    step3_processDescription,
-    step4_processDate,
-    step5_finalize
+    step0_askInput,           // Step 0: Ask user to describe income
+    step1_parseAndAskMethod,  // Step 1: AI parse → show results → ask method
+    step2_processMethod,      // Step 2: Process method selection → finalize
+    step4_manualAmount,       // Step 3: Fallback: manual amount
+    step5_manualDescription,  // Step 4: Fallback: manual description
+    step6_manualDate          // Step 5: Fallback: manual date
 );

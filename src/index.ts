@@ -153,7 +153,9 @@ async function main() {
         });
 
         // Launch Bot (Webhook Mode for Production)
-        const WEBHOOK_DOMAIN = process.env.WEBHOOK_DOMAIN; // e.g. https://your-app.koyeb.app
+        const RAW_WEBHOOK_DOMAIN = process.env.WEBHOOK_DOMAIN; // e.g. https://your-app.koyeb.app
+        // Normalize: strip trailing slashes to prevent double-slash in URL
+        const WEBHOOK_DOMAIN = RAW_WEBHOOK_DOMAIN ? RAW_WEBHOOK_DOMAIN.replace(/\/+$/, '') : undefined;
         const WEBHOOK_PATH = '/webhook/telegram';
 
         // 1. Set Bot Profile (Best Effort - Don't block startup if rate limited)
@@ -175,6 +177,68 @@ async function main() {
             logger.warn('Failed to update bot profile (likely rate limited), continuing startup...', { error: e.message });
         }
 
+        /**
+         * Process pending updates that accumulated while bot was offline.
+         * Instead of dropping them, we fetch via getUpdates and handle each one.
+         */
+        async function processPendingUpdates(): Promise<void> {
+            try {
+                // First, delete webhook so we can use getUpdates (they are mutually exclusive)
+                await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+                await new Promise(res => setTimeout(res, 500));
+
+                let processedCount = 0;
+                let lastUpdateId: number | undefined;
+
+                // Fetch pending updates in batches
+                while (true) {
+                    const updates = await bot.telegram.callApi('getUpdates', {
+                        offset: lastUpdateId !== undefined ? lastUpdateId + 1 : undefined,
+                        limit: 100,
+                        timeout: 0 // Don't long-poll, just get what's queued
+                    }) as any[];
+
+                    if (!updates || updates.length === 0) break;
+
+                    for (const update of updates) {
+                        try {
+                            await bot.handleUpdate(update);
+                            processedCount++;
+                        } catch (err: any) {
+                            logger.error('Error processing pending update', {
+                                updateId: update.update_id,
+                                error: err.message
+                            });
+                        }
+                        lastUpdateId = update.update_id;
+                    }
+
+                    // If we got fewer than 100, we've consumed all pending
+                    if (updates.length < 100) break;
+                }
+
+                if (processedCount > 0) {
+                    logger.info(`✅ Processed ${processedCount} pending update(s) successfully`);
+                    // Confirm offset by calling getUpdates once more with offset
+                    if (lastUpdateId !== undefined) {
+                        await bot.telegram.callApi('getUpdates', {
+                            offset: lastUpdateId + 1,
+                            limit: 1,
+                            timeout: 0
+                        });
+                    }
+                } else {
+                    logger.info('No pending updates to process');
+                }
+            } catch (error: any) {
+                logger.error('Failed to process pending updates', { error: error.message });
+                // Even if processing fails, don't block startup - just drop remaining
+                try {
+                    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                } catch (e) { /* ignore cleanup error */ }
+            }
+        }
+
         // 2. Setup Webhook or Polling
         let botRetries = 5;
         while (botRetries > 0) {
@@ -187,30 +251,44 @@ async function main() {
                     const webhookInfo = await bot.telegram.getWebhookInfo();
 
                     if (webhookInfo.url !== webhookUrl) {
-                        logger.info(`Webhook URL mismatch. Current: ${webhookInfo.url || 'none'}, Target: ${webhookUrl}`);
+                        logger.info(`Webhook URL mismatch. Current: "${webhookInfo.url || 'none'}", Target: "${webhookUrl}"`);
 
-                        // IMPORTANT: Delete old webhook and drop pending updates
-                        // This prevents issues with pending updates from old deployments
-                        logger.info('Deleting old webhook and clearing pending updates...');
-                        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                        // Process any pending updates BEFORE dropping them
+                        if (webhookInfo.pending_update_count && webhookInfo.pending_update_count > 0) {
+                            logger.info(`Found ${webhookInfo.pending_update_count} pending updates. Processing before webhook reset...`);
+                            await processPendingUpdates();
+                        } else {
+                            // No pending updates, just delete the old webhook cleanly
+                            await bot.telegram.deleteWebhook({ drop_pending_updates: false });
+                        }
 
-                        // Wait a bit for Telegram to process the deletion
+                        // Wait for Telegram to process
                         await new Promise(res => setTimeout(res, 1000));
 
                         // Set new webhook
-                        logger.info(`Setting new webhook to ${webhookUrl}...`);
+                        logger.info(`Setting webhook to ${webhookUrl}...`);
                         await bot.telegram.setWebhook(webhookUrl);
-                        logger.info(`✅ Bot webhook set to ${webhookUrl}`);
-                    } else {
-                        logger.info(`Webhook already correctly set to ${webhookUrl}.`);
 
-                        // Even if URL is same, check for pending updates
+                        // Verify webhook was set correctly
+                        const verification = await bot.telegram.getWebhookInfo();
+                        if (verification.url === webhookUrl) {
+                            logger.info(`✅ Webhook verified: ${verification.url}`);
+                        } else {
+                            logger.error(`❌ Webhook verification FAILED. Expected: "${webhookUrl}", Got: "${verification.url}"`);
+                            throw new Error('Webhook verification failed');
+                        }
+                    } else {
+                        logger.info(`Webhook already correctly set to ${webhookUrl}`);
+
+                        // Check for pending updates and process them
                         if (webhookInfo.pending_update_count && webhookInfo.pending_update_count > 0) {
-                            logger.warn(`Found ${webhookInfo.pending_update_count} pending updates. Clearing...`);
-                            await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-                            await new Promise(res => setTimeout(res, 1000));
+                            logger.info(`Found ${webhookInfo.pending_update_count} pending updates. Processing...`);
+                            await processPendingUpdates();
+
+                            // Re-set webhook after processing (getUpdates cleared it)
+                            await new Promise(res => setTimeout(res, 500));
                             await bot.telegram.setWebhook(webhookUrl);
-                            logger.info('✅ Pending updates cleared and webhook reset.');
+                            logger.info('✅ Pending updates processed and webhook re-established');
                         }
                     }
 

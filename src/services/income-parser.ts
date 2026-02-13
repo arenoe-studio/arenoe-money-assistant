@@ -2,33 +2,51 @@ import { openRouterChatCompletion } from './ai';
 import { logger } from '../utils/logger';
 import { ApplicationError } from '../utils/error';
 
-const INCOME_PARSER_PROMPT = `Kamu adalah parser income/pemasukan yang PRESISI dan CERDAS.
+const INCOME_PARSER_PROMPT = `Kamu adalah parser income/pemasukan yang SANGAT PRESISI dan CERDAS.
 
 Tugasmu: dari pesan user tentang PEMASUKAN, ekstrak data menjadi JSON.
 
-ATURAN:
+ATURAN UTAMA (ANTI-HALUSINASI):
 1. **JANGAN MENGIRA-NGIRA**. Jika data tidak eksplisit, return \`null\`.
 2. **Keterangan/Description**: Hapus kata kerja (dapat, terima, masuk). Ambil inti keterangannya.
    - "Dapat gaji" -> "Gaji"
    - "Terima bonus" -> "Bonus"
    - "Masuk uang dari freelance" -> "Freelance"
-3. **Nominal**:
+   - "Fee gambar B3 Pak Tommy" -> "Fee Gambar B3 Pak Tommy"
+   - "500k gaji" -> description: "Gaji", amount: 500000
+3. **Nominal** (PENTING - HARUS PRESISI):
+   - "500k" -> 500000 (BUKAN 2500000, BUKAN 5000000)
    - "15k" -> 15000
    - "1.5jt" -> 1500000
+   - "2jt" -> 2000000
+   - "25rb" -> 25000
+   - "1500000" -> 1500000
+   - "k" = "ribu" = x1000, "jt" = "juta" = x1000000
+   - Jika ada angka dengan suffix "k", kalikan dengan 1000 SAJA.
+   - **JANGAN MENAMBAHKAN ANGKA YANG TIDAK ADA**
    - Jika tidak ada nominal, return \`null\`.
-4. **Tanggal** (PENTING):
+4. **Tanggal** (PENTING - DETEKSI LEBIH BAIK):
    - Default: \`null\` (backend akan gunakan hari ini)
    - Ekstrak HANYA jika user menyebut tanggal eksplisit:
      * "2 februari 2026" -> "2026-02-02"
+     * "15 jan 2026" -> "2026-01-15"
+     * "6 Februari 2026" -> "2026-02-06"
      * "kemarin" -> hitung dari hari ini
      * "tgl 5" -> tahun/bulan sekarang, tanggal 5
      * "Jumat lalu" -> hitung dari hari ini
+     * "3 hari yang lalu" -> hitung dari hari ini
    - Format output: **YYYY-MM-DD** (TANPA JAM/WAKTU)
    - **JANGAN** tambahkan jam (HH:mm:ss) kecuali user secara eksplisit menulis jam
+   - **PRIORITAS**: Jika ada tanggal di awal pesan, PASTI ekstrak.
+5. **Pesan Multi-baris**: User mungkin menulis dalam beberapa baris. Gabungkan semua info:
+   - Baris 1: "6 Februari 2026" (tanggal)
+   - Baris 2: "500k" (nominal)
+   - Baris 3: "Fee gambar B3 Pak Tommy" (keterangan)
+   -> { "description": "Fee Gambar B3 Pak Tommy", "amount": 500000, "tanggal": "2026-02-06" }
 
-OUTPUT FORMAT (JSON ONLY):
+OUTPUT FORMAT (JSON ONLY, tanpa penjelasan):
 {
-  "description": string,
+  "description": string | null,
   "amount": number | null,
   "tanggal": string | null
 }
@@ -42,10 +60,24 @@ Output: { "description": "Bonus", "amount": 500000, "tanggal": "[YESTERDAY_DATE]
 
 Input: "2 februari 2026 dapat uang freelance 2jt"
 Output: { "description": "Freelance", "amount": 2000000, "tanggal": "2026-02-02" }
+
+Input: "500k"
+Output: { "description": null, "amount": 500000, "tanggal": null }
+
+Input: "6 Februari 2026\\n500k\\nFee gambar B3 Pak Tommy"
+Output: { "description": "Fee Gambar B3 Pak Tommy", "amount": 500000, "tanggal": "2026-02-06" }
+
+Input: "Freelance 500k 6 feb 2026"
+Output: { "description": "Freelance", "amount": 500000, "tanggal": "2026-02-06" }
+
+PERINGATAN:
+- 500k = 500.000, BUKAN 2.500.000 atau 5.000.000
+- 1jt = 1.000.000
+- Jangan menambahkan digit yang tidak ada
 `;
 
 export interface IncomeParseResult {
-    description: string;
+    description: string | null;
     amount: number | null;
     tanggal: string | null;
 }
@@ -55,10 +87,13 @@ export interface IncomeParseResult {
  */
 export async function parseIncomeMessage(message: string): Promise<IncomeParseResult> {
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    // Use WIB timezone for date context
+    const jakartaOffset = 7 * 60; // UTC+7
+    const jakartaTime = new Date(now.getTime() + (jakartaOffset + now.getTimezoneOffset()) * 60000);
+    const today = jakartaTime.toISOString().split('T')[0];
 
-    // Calculate yesterday for context
-    const yesterday = new Date(now);
+    // Calculate yesterday
+    const yesterday = new Date(jakartaTime);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
@@ -78,16 +113,20 @@ export async function parseIncomeMessage(message: string): Promise<IncomeParseRe
             throw new ApplicationError('AI tidak merespons');
         }
 
-        try {
-            const parsed = JSON.parse(content);
+        logger.info('Income AI raw response', { content });
 
-            // Validate structure
-            if (!parsed.description && !parsed.amount) {
-                throw new Error('Invalid income data structure');
+        try {
+            // Clean potential markdown code blocks
+            const cleanContent = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            const parsed = JSON.parse(cleanContent);
+
+            // Validate: at least one field must be present
+            if (!parsed.description && !parsed.amount && !parsed.tanggal) {
+                throw new Error('All fields are null');
             }
 
             return {
-                description: parsed.description || 'Income',
+                description: parsed.description || null,
                 amount: parsed.amount || null,
                 tanggal: parsed.tanggal || null
             };
